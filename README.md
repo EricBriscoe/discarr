@@ -6,38 +6,14 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 
-Discarr is a Discord bot that provides real-time monitoring of Radarr and Sonarr download activities directly in Discord.
-
-## Features
-
-- Real-time download progress tracking for movies and TV shows
-- Automatic notifications for download events
-- Single, auto-updating status message with pagination
-- Modern Discord slash commands
-- Easy setup with Docker or local Python
+Discarr is a simple Discord bot that provides real-time monitoring of Radarr and Sonarr download activities directly in Discord.
 
 ## Prerequisites
 
 - Discord account and bot token
 - Radarr and/or Sonarr instances with API access
 
-## Quick Start with Docker
-
-```bash
-# Clone the repository
-git clone https://github.com/EricBriscoe/discarr.git
-cd discarr
-
-# Create config and set environment variables
-mkdir -p config
-cp .env.example config/.env
-# Edit config/.env with your details
-
-# Run with Docker Compose
-docker-compose up -d
-```
-
-### Docker Run Command
+## Quick Start with Docker Compose
 
 ```bash
 docker run -d \
