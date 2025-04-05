@@ -1,5 +1,7 @@
 # Discarr - Discord Bot for Radarr & Sonarr Progress Tracking
 
+![Discarr Example](./assets/image.png)
+
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
@@ -99,16 +101,6 @@ docker run -d \
    - **Container Path**: `/app/config`
 
 7. **Click** "Deploy" to start the application.
-
-### Using Docker Compose in TrueNAS
-
-Alternatively, you can use the "Launch Docker Image" with Docker Compose:
-
-1. **Upload** your `docker-compose.yml` to a directory on your TrueNAS system.
-2. **Create** a config/.env file with your settings.
-3. **Navigate** to Apps > Launch Docker Image.
-4. **Select** "Docker Compose" and provide the path to your compose file.
-5. **Deploy** the container.
 
 ## 🔧 Standard Installation
 
