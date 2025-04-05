@@ -1,0 +1,2 @@
+# This file ensures that the config directory is included in Git
+# The actual configuration files should be added to .gitignore

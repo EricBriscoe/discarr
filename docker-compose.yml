@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  discarr:
+    build: .
+    container_name: discarr
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+    env_file:
+      - ./config/.env
+    environment:
+      - TZ=America/Chicago
