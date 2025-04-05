@@ -63,13 +63,20 @@ class PaginationManager:
         
     def update_page_limits(self, movie_count, tv_count):
         """Update the last page numbers based on item counts."""
+        self.update_movie_page_limit(movie_count)
+        self.update_tv_page_limit(tv_count)
+    
+    def update_movie_page_limit(self, movie_count):
+        """Update just the movie page limit."""
         self.last_movie_page = max(1, math.ceil(movie_count / self.items_per_page))
-        self.last_tv_page = max(1, math.ceil(tv_count / self.items_per_page))
-        
-        # Ensure current pages are within valid ranges
+        # Ensure current page is within valid range
         if self.movie_current_page > self.last_movie_page:
             self.movie_current_page = self.last_movie_page
-            
+    
+    def update_tv_page_limit(self, tv_count):
+        """Update just the TV page limit."""
+        self.last_tv_page = max(1, math.ceil(tv_count / self.items_per_page))
+        # Ensure current page is within valid range
         if self.tv_current_page > self.last_tv_page:
             self.tv_current_page = self.last_tv_page
     

@@ -9,6 +9,8 @@ from discord import app_commands
 import config
 from download_monitor import DownloadMonitor
 import asyncio
+import signal
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,24 @@ class DiscordClient:
         # Set up event handlers
         self.setup_event_handlers()
         self.setup_commands()
+        self.setup_signal_handlers()
+    
+    def setup_signal_handlers(self):
+        """Set up signal handlers for graceful shutdown."""
+        def handle_shutdown_signal(sig, frame):
+            """Handle shutdown signals by stopping background tasks."""
+            logger.info(f"Received shutdown signal {sig}, cleaning up...")
+            if self.download_monitor:
+                # Create asyncio task to stop the monitor properly
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.download_monitor.stop())
+            # Exit after a short delay to allow cleanup
+            sys.exit(0)
+            
+        # Register signal handlers
+        signal.signal(signal.SIGINT, handle_shutdown_signal)
+        signal.signal(signal.SIGTERM, handle_shutdown_signal)
         
     def setup_event_handlers(self):
         """Set up Discord bot event handlers."""
@@ -170,8 +190,13 @@ class DiscordClient:
     
     async def run(self):
         """Run the Discord bot."""
-        await self.bot.start(config.DISCORD_TOKEN)
-        
+        try:
+            await self.bot.start(config.DISCORD_TOKEN)
+        finally:
+            # Ensure background tasks are cleaned up
+            if self.download_monitor:
+                await self.download_monitor.stop()
+                
     def start(self):
         """Start the Discord bot (blocking call)."""
         self.bot.run(config.DISCORD_TOKEN)

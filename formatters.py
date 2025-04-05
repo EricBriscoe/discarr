@@ -150,3 +150,103 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager):
     
     # Return the embed object
     return embed
+
+def format_loading_message():
+    """Create a loading message embed."""
+    embed = discord.Embed(
+        title="📊 Download Status",
+        color=discord.Color.blue(),
+        description="Loading download information from Radarr and Sonarr..."
+    )
+    
+    embed.add_field(
+        name="🎬 Movies",
+        value="Loading movie data...\n⏳ Please wait, this may take a moment for large libraries.",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="📺 TV Shows",
+        value="Loading TV show data...\n⏳ Please wait, this may take a moment for large libraries.",
+        inline=False
+    )
+    
+    # Add navigation controls as footer
+    controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
+    embed.set_footer(text=controls)
+    
+    # Add timestamp
+    utc_now = discord.utils.utcnow()
+    embed.timestamp = utc_now
+    
+    return embed
+
+def format_partial_loading_message(movie_downloads, tv_downloads, pagination_manager, radarr_ready, sonarr_ready):
+    """Create a message for when one service is ready but the other is still loading.
+    
+    Args:
+        movie_downloads: List of movie downloads from Radarr
+        tv_downloads: List of TV downloads from Sonarr
+        pagination_manager: The pagination manager instance
+        radarr_ready: Boolean indicating if Radarr data is ready
+        sonarr_ready: Boolean indicating if Sonarr data is ready
+    
+    Returns:
+        A Discord embed with appropriate content
+    """
+    # Create a new embed
+    embed = discord.Embed(
+        title="📊 Download Status",
+        color=discord.Color.blue(),
+        description="Current download status for movies and TV shows"
+    )
+    
+    # Update pagination limits for the service that's ready
+    if radarr_ready:
+        pagination_manager.update_movie_page_limit(len(movie_downloads))
+    if sonarr_ready:
+        pagination_manager.update_tv_page_limit(len(tv_downloads))
+    
+    # Get pagination information
+    movie_current_page, movie_total_pages = pagination_manager.get_pagination_info(is_movie=True)
+    tv_current_page, tv_total_pages = pagination_manager.get_pagination_info(is_movie=False)
+    
+    # Add movie section
+    if radarr_ready:
+        movie_section = format_movie_section(movie_downloads, pagination_manager)
+        embed.add_field(
+            name=f"🎬 Movies (Page {movie_current_page}/{movie_total_pages})",
+            value=movie_section,
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="🎬 Movies",
+            value="Loading movie data...\n⏳ Please wait, this may take a moment for large libraries.",
+            inline=False
+        )
+    
+    # Add TV section
+    if sonarr_ready:
+        tv_section = format_tv_section(tv_downloads, pagination_manager)
+        embed.add_field(
+            name=f"📺 TV Shows (Page {tv_current_page}/{tv_total_pages})",
+            value=tv_section,
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="📺 TV Shows",
+            value="Loading TV show data...\n⏳ Please wait, this may take a moment for large libraries.",
+            inline=False
+        )
+    
+    # Add navigation controls as footer
+    controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
+    embed.set_footer(text=controls)
+    
+    # Add timestamp
+    utc_now = discord.utils.utcnow()
+    embed.timestamp = utc_now
+    
+    return embed
