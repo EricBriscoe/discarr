@@ -8,6 +8,7 @@ from discord.ext import commands
 from discord import app_commands
 import config
 from download_monitor import DownloadMonitor
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,13 @@ class DiscordClient:
             except Exception as e:
                 logger.error(f"Failed to sync commands: {e}")
             
-            # Initialize and start the download monitor
+            # Schedule the download monitor initialization and start as a background task
             if not self.download_monitor:
-                self.download_monitor = DownloadMonitor(self.bot, config.DISCORD_CHANNEL_ID)
-                await self.download_monitor.start()
+                logger.info("Scheduling DownloadMonitor initialization.")
+                # Create a task to run the setup in the background
+                asyncio.create_task(self.initialize_monitor())
             else:
-                logger.info("Download monitor already initialized")
+                logger.info("Download monitor already initialized or initialization scheduled.")
             
         @self.bot.event
         async def on_reaction_add(reaction, user):
@@ -73,6 +75,17 @@ class DiscordClient:
             except Exception as e:
                 logger.error(f"Error removing reaction: {e}")
     
+    async def initialize_monitor(self):
+        """Initializes and starts the DownloadMonitor."""
+        # Ensure this runs only once
+        if self.download_monitor:
+            return
+            
+        logger.info("Initializing DownloadMonitor...")
+        self.download_monitor = DownloadMonitor(self.bot, config.DISCORD_CHANNEL_ID)
+        await self.download_monitor.start()
+        logger.info("DownloadMonitor started.")
+
     def setup_commands(self):
         """Set up Discord bot slash commands."""
         @self.bot.tree.command(name="check", description="Manually refresh the download status")
@@ -92,23 +105,39 @@ class DiscordClient:
             if str(interaction.user.id) != str(interaction.guild.owner_id):
                 await interaction.response.send_message("Only the server owner can use this command.", ephemeral=True)
                 return
-                
+
+            # Defer the response immediately to avoid timeout
+            await interaction.response.defer(ephemeral=True)
+
+            # Toggle the global verbose setting
             config.VERBOSE = not config.VERBOSE
-            
-            root_logger = logging.getLogger()
-            root_logger.setLevel(logging.DEBUG if config.VERBOSE else logging.INFO)
-            
+            new_level = logging.DEBUG if config.VERBOSE else logging.INFO
             status = "enabled" if config.VERBOSE else "disabled"
+
+            # Update root logger level
+            root_logger = logging.getLogger()
+            root_logger.setLevel(new_level)
+
+            # Update ArrClient instances if the monitor exists
+            if self.download_monitor:
+                if self.download_monitor.radarr_client:
+                    self.download_monitor.radarr_client.verbose = config.VERBOSE
+                    logger.debug(f"Updated RadarrClient verbose to {config.VERBOSE}")
+                if self.download_monitor.sonarr_client:
+                    self.download_monitor.sonarr_client.verbose = config.VERBOSE
+                    logger.debug(f"Updated SonarrClient verbose to {config.VERBOSE}")
+
             logger.info(f"Verbose mode {status} by admin command")
-            
+
             embed = discord.Embed(
                 title="Verbose Mode Updated",
-                description=f"Verbose mode {status}.",
+                description=f"Verbose mode has been {status}.",
                 color=discord.Color.green()
             )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            
+
+            # Send the confirmation via followup
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
         @self.bot.tree.command(name="cleanup", description="Remove inactive downloads from queue (admin only)")
         async def cleanup_slash(interaction: discord.Interaction):
             """Slash command to remove inactive downloads from queue."""
