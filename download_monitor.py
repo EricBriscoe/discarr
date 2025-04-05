@@ -9,8 +9,9 @@ from discord.ext import tasks
 import config
 from radarr import RadarrClient
 from sonarr import SonarrClient
-from formatters import format_summary_message
+from formatters import format_summary_message, format_loading_message, format_partial_loading_message
 from pagination import PaginationManager, REACTION_CONTROLS
+from cache_manager import CacheManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +32,14 @@ class DownloadMonitor:
         self.sonarr_client = SonarrClient()
         self.pagination = PaginationManager()
         self.check_loop = None  # Initialize as None, will create later
+        # Initialize the cache manager
+        self.cache_manager = CacheManager(self.radarr_client, self.sonarr_client)
         
     async def start(self):
         """Start the download monitoring loop."""
-        await self.find_or_create_summary_message()
+        # First post the loading message and start background data refresh
+        await self.find_or_create_summary_message(show_loading=True)
+        self.cache_manager.start_background_refresh()
         
         # Create the task loop properly
         self.check_loop = tasks.loop(
@@ -55,6 +60,7 @@ class DownloadMonitor:
         """Stop the download monitoring loop."""
         if self.check_loop and self.check_loop.is_running():
             self.check_loop.cancel()
+        self.cache_manager.stop_background_refresh()
     
     async def _check_downloads_wrapper(self):
         """Wrapper function for the task loop."""
@@ -68,25 +74,38 @@ class DownloadMonitor:
                 logger.error(f"Cannot find channel {self.channel_id}")
                 return
 
-            # Get all queue items
-            movie_queue = self.radarr_client.get_queue_items()
-            tv_queue = self.sonarr_client.get_queue_items()
+            # Get cached queue items
+            movie_queue = self.cache_manager.get_movie_queue()
+            tv_queue = self.cache_manager.get_tv_queue()
 
             if config.VERBOSE:
                 logger.debug(f"Found {len(movie_queue)} movies and {len(tv_queue)} TV shows in queue")
 
-            # Update internal state
-            self.radarr_client.get_download_updates()
-            self.sonarr_client.get_download_updates()
-
-            # Create the embed
-            summary_embed = format_summary_message(movie_queue, tv_queue, self.pagination)
+            # Create the embed based on loading status
+            if not self.cache_manager.is_radarr_ready() and not self.cache_manager.is_sonarr_ready():
+                # Both services are still loading
+                summary_embed = format_loading_message()
+            elif not self.cache_manager.is_data_ready():
+                # One service is ready but the other is still loading
+                radarr_ready = self.cache_manager.is_radarr_ready()
+                sonarr_ready = self.cache_manager.is_sonarr_ready()
+                summary_embed = format_partial_loading_message(
+                    movie_queue if radarr_ready else [],
+                    tv_queue if sonarr_ready else [],
+                    self.pagination,
+                    radarr_ready,
+                    sonarr_ready
+                )
+            else:
+                # Both services are ready
+                summary_embed = format_summary_message(movie_queue, tv_queue, self.pagination)
+                
             await self.update_summary_message(channel, summary_embed)
 
         except Exception as e:
             logger.error(f"Error in check_downloads loop: {e}", exc_info=True)
 
-    async def find_or_create_summary_message(self):
+    async def find_or_create_summary_message(self, show_loading=False):
         """Always delete existing messages and create a new one on startup."""
         channel = self.bot.get_channel(self.channel_id)
         if not channel:
@@ -100,7 +119,16 @@ class DownloadMonitor:
             
             # Reset summary message ID to ensure we create a new one
             self.summary_message_id = None
-            logger.info("Will create a new summary message on first check")
+            
+            # Post an initial loading message if requested
+            if show_loading:
+                logger.info("Creating initial loading message")
+                embed = format_loading_message()
+                new_message = await channel.send(embed=embed)
+                self.summary_message_id = new_message.id
+                await self.add_pagination_controls(new_message)
+            else:
+                logger.info("Will create a new summary message on first check")
             
         except discord.Forbidden:
             logger.error("Missing permissions to read channel history or delete messages.")
