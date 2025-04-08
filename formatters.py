@@ -272,13 +272,6 @@ def format_health_status_message(health_status, last_updated=None):
     plex_emoji = get_status_emoji(plex_status.get('status', 'unknown'))
     plex_content = f"{plex_emoji} **Status:** {plex_status.get('status', 'unknown')}\n"
     
-    # Add additional info if service is online
-    if plex_status.get('status') == 'online':
-        plex_content += f"**Version:** {plex_status.get('version', 'unknown')}\n"
-        plex_content += f"**Response Time:** {plex_status.get('response_time', 0)} ms\n"
-    elif plex_status.get('status') == 'error' or plex_status.get('status') == 'offline':
-        plex_content += f"**Error:** {plex_status.get('error', 'Unknown error')}\n"
-    
     # Add last check time
     plex_check_time = plex_status.get('last_check')
     if plex_check_time:
@@ -291,13 +284,6 @@ def format_health_status_message(health_status, last_updated=None):
     radarr_emoji = get_status_emoji(radarr_status.get('status', 'unknown'))
     radarr_content = f"{radarr_emoji} **Status:** {radarr_status.get('status', 'unknown')}\n"
     
-    # Add additional info if service is online
-    if radarr_status.get('status') == 'online':
-        radarr_content += f"**Version:** {radarr_status.get('version', 'unknown')}\n"
-        radarr_content += f"**Response Time:** {radarr_status.get('response_time', 0)} ms\n"
-    elif radarr_status.get('status') == 'error' or radarr_status.get('status') == 'offline':
-        radarr_content += f"**Error:** {radarr_status.get('error', 'Unknown error')}\n"
-    
     # Add last check time
     radarr_check_time = radarr_status.get('last_check')
     if radarr_check_time:
@@ -309,13 +295,6 @@ def format_health_status_message(health_status, last_updated=None):
     sonarr_status = health_status.get('sonarr', {'status': 'unknown'})
     sonarr_emoji = get_status_emoji(sonarr_status.get('status', 'unknown'))
     sonarr_content = f"{sonarr_emoji} **Status:** {sonarr_status.get('status', 'unknown')}\n"
-    
-    # Add additional info if service is online
-    if sonarr_status.get('status') == 'online':
-        sonarr_content += f"**Version:** {sonarr_status.get('version', 'unknown')}\n"
-        sonarr_content += f"**Response Time:** {sonarr_status.get('response_time', 0)} ms\n"
-    elif sonarr_status.get('status') == 'error' or sonarr_status.get('status') == 'offline':
-        sonarr_content += f"**Error:** {sonarr_status.get('error', 'Unknown error')}\n"
     
     # Add last check time
     sonarr_check_time = sonarr_status.get('last_check')
