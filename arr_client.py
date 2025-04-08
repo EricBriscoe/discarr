@@ -88,7 +88,7 @@ class ArrClient(ABC):
             response = requests.get(url, headers=self.headers, params=params)
             response.raise_for_status()
             data = response.json()
-            
+
             if self.verbose:
                 logger.debug(f"Queue contains {len(data.get('records', []))} records")
                 

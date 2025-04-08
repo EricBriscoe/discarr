@@ -170,6 +170,7 @@ class DiscordClient:
             
             # Get all queue items
             radarr_items = self.download_monitor.radarr_client.get_queue_items()
+            logger.debug(f"Radarr queue items: {radarr_items}")
             sonarr_items = self.download_monitor.sonarr_client.get_queue_items()
             all_items = radarr_items + sonarr_items
             
@@ -178,7 +179,7 @@ class DiscordClient:
             if all_items:
                 all_unknown_time = all(
                     item.get("time_left") == "unknown" or 
-                    item.get("time_left") == "∞" 
+                    item.get("time_left") == "∞"
                     for item in all_items
                 )
             

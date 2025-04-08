@@ -54,8 +54,9 @@ def format_movie_section(movie_downloads, pagination_manager):
     
     for i in range(start_idx, end_idx):
         movie = movie_downloads[i]
+        logger.debug(f"Processing movie: {movie}")
         title = truncate_title(movie['title'])
-        time_left = movie.get('time_left', 'unknown')
+        eta = movie.get('time_left', None)
         display_status = movie.get('status', 'unknown')
         
         # Include error messages if present
@@ -85,7 +86,7 @@ def format_movie_section(movie_downloads, pagination_manager):
         # Add time left in its own field for proper rendering
         embed_fields.append({
             "name": "Time Left",
-            "value": time_left,
+            "value": eta,
             "inline": True
         })
         
@@ -106,8 +107,9 @@ def format_tv_section(tv_downloads, pagination_manager):
     
     for i in range(start_idx, end_idx):
         tv = tv_downloads[i]
+        logger.debug(f"Processing TV show: {tv}")
         series = truncate_title(tv['series'], 40)
-        eta = tv.get('estimatedCompletionTime', None)
+        eta = tv.get('time_left', None)
         display_status = tv.get('status', 'unknown')
         
         # Include error messages if present
@@ -137,7 +139,7 @@ def format_tv_section(tv_downloads, pagination_manager):
         # Add time left in its own field for proper rendering
         embed_fields.append({
             "name": "Time Left",
-            "value": format_discord_timestamp(eta),
+            "value": eta,
             "inline": True
         })
         
