@@ -6,7 +6,7 @@ import discord
 import pytz
 import logging
 from datetime import datetime
-from utils import get_status_emoji, truncate_title
+from utils import get_status_emoji, truncate_title, format_relative_time
 from pagination import FIRST_PAGE, PREV_PAGE, NEXT_PAGE, LAST_PAGE
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ def format_tv_section(tv_downloads, pagination_manager):
     
     return content
 
-def format_summary_message(movie_downloads, tv_downloads, pagination_manager):
+def format_summary_message(movie_downloads, tv_downloads, pagination_manager, last_updated=None):
     """Format the complete summary message as a Discord embed."""
     # Update pagination limits first
     pagination_manager.update_page_limits(len(movie_downloads), len(tv_downloads))
@@ -140,13 +140,18 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager):
     
     # Add navigation controls as footer
     controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
-    embed.set_footer(text=controls)
     
-    # Add timestamp
-    utc_now = discord.utils.utcnow()
-    central_tz = pytz.timezone('America/Chicago')
-    central_time = utc_now.replace(tzinfo=pytz.utc).astimezone(central_tz)
-    embed.timestamp = utc_now
+    # Add relative time if provided
+    if last_updated:
+        relative_time = format_relative_time(last_updated)
+        footer_text = f"{controls} • Last updated: {relative_time}"
+    else:
+        footer_text = controls
+        
+    embed.set_footer(text=footer_text)
+    
+    # Add timestamp (still needed for Discord's internal tracking)
+    embed.timestamp = discord.utils.utcnow()
     
     # Return the embed object
     return embed
@@ -176,24 +181,12 @@ def format_loading_message():
     embed.set_footer(text=controls)
     
     # Add timestamp
-    utc_now = discord.utils.utcnow()
-    embed.timestamp = utc_now
+    embed.timestamp = discord.utils.utcnow()
     
     return embed
 
-def format_partial_loading_message(movie_downloads, tv_downloads, pagination_manager, radarr_ready, sonarr_ready):
-    """Create a message for when one service is ready but the other is still loading.
-    
-    Args:
-        movie_downloads: List of movie downloads from Radarr
-        tv_downloads: List of TV downloads from Sonarr
-        pagination_manager: The pagination manager instance
-        radarr_ready: Boolean indicating if Radarr data is ready
-        sonarr_ready: Boolean indicating if Sonarr data is ready
-    
-    Returns:
-        A Discord embed with appropriate content
-    """
+def format_partial_loading_message(movie_downloads, tv_downloads, pagination_manager, radarr_ready, sonarr_ready, last_updated=None):
+    """Create a message for when one service is ready but the other is still loading."""
     # Create a new embed
     embed = discord.Embed(
         title="📊 Download Status",
@@ -243,10 +236,106 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
     
     # Add navigation controls as footer
     controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
-    embed.set_footer(text=controls)
+    
+    # Add relative time if provided
+    if last_updated:
+        relative_time = format_relative_time(last_updated)
+        footer_text = f"{controls} • Last updated: {relative_time}"
+    else:
+        footer_text = controls
+        
+    embed.set_footer(text=footer_text)
     
     # Add timestamp
-    utc_now = discord.utils.utcnow()
-    embed.timestamp = utc_now
+    embed.timestamp = discord.utils.utcnow()
+    
+    return embed
+
+def format_health_status_message(health_status, last_updated=None):
+    """Format the health status message as a Discord embed.
+    
+    Args:
+        health_status: Dictionary containing health check results
+        last_updated: Datetime when the health check was performed
+        
+    Returns:
+        A Discord embed object containing the health status information
+    """
+    embed = discord.Embed(
+        title="🏥 Service Health Status",
+        color=discord.Color.green(),
+        description="Current health status of media server services"
+    )
+    
+    # Add Plex status field
+    plex_status = health_status.get('plex', {'status': 'unknown'})
+    plex_emoji = get_status_emoji(plex_status.get('status', 'unknown'))
+    plex_content = f"{plex_emoji} **Status:** {plex_status.get('status', 'unknown')}\n"
+    
+    # Add additional info if service is online
+    if plex_status.get('status') == 'online':
+        plex_content += f"**Version:** {plex_status.get('version', 'unknown')}\n"
+        plex_content += f"**Response Time:** {plex_status.get('response_time', 0)} ms\n"
+    elif plex_status.get('status') == 'error' or plex_status.get('status') == 'offline':
+        plex_content += f"**Error:** {plex_status.get('error', 'Unknown error')}\n"
+    
+    # Add last check time
+    plex_check_time = plex_status.get('last_check')
+    if plex_check_time:
+        plex_content += f"**Last Check:** {format_relative_time(plex_check_time)}"
+    
+    embed.add_field(name="🎞️ Plex Media Server", value=plex_content, inline=False)
+    
+    # Add Radarr status field
+    radarr_status = health_status.get('radarr', {'status': 'unknown'})
+    radarr_emoji = get_status_emoji(radarr_status.get('status', 'unknown'))
+    radarr_content = f"{radarr_emoji} **Status:** {radarr_status.get('status', 'unknown')}\n"
+    
+    # Add additional info if service is online
+    if radarr_status.get('status') == 'online':
+        radarr_content += f"**Version:** {radarr_status.get('version', 'unknown')}\n"
+        radarr_content += f"**Response Time:** {radarr_status.get('response_time', 0)} ms\n"
+    elif radarr_status.get('status') == 'error' or radarr_status.get('status') == 'offline':
+        radarr_content += f"**Error:** {radarr_status.get('error', 'Unknown error')}\n"
+    
+    # Add last check time
+    radarr_check_time = radarr_status.get('last_check')
+    if radarr_check_time:
+        radarr_content += f"**Last Check:** {format_relative_time(radarr_check_time)}"
+    
+    embed.add_field(name="🎬 Radarr", value=radarr_content, inline=True)
+    
+    # Add Sonarr status field
+    sonarr_status = health_status.get('sonarr', {'status': 'unknown'})
+    sonarr_emoji = get_status_emoji(sonarr_status.get('status', 'unknown'))
+    sonarr_content = f"{sonarr_emoji} **Status:** {sonarr_status.get('status', 'unknown')}\n"
+    
+    # Add additional info if service is online
+    if sonarr_status.get('status') == 'online':
+        sonarr_content += f"**Version:** {sonarr_status.get('version', 'unknown')}\n"
+        sonarr_content += f"**Response Time:** {sonarr_status.get('response_time', 0)} ms\n"
+    elif sonarr_status.get('status') == 'error' or sonarr_status.get('status') == 'offline':
+        sonarr_content += f"**Error:** {sonarr_status.get('error', 'Unknown error')}\n"
+    
+    # Add last check time
+    sonarr_check_time = sonarr_status.get('last_check')
+    if sonarr_check_time:
+        sonarr_content += f"**Last Check:** {format_relative_time(sonarr_check_time)}"
+    
+    embed.add_field(name="📺 Sonarr", value=sonarr_content, inline=True)
+    
+    # Add overall status in footer with relative time
+    if last_updated:
+        relative_time = format_relative_time(last_updated)
+        embed.set_footer(text=f"Last updated: {relative_time}")
+    
+    # Add timestamp for Discord's internal tracking
+    embed.timestamp = discord.utils.utcnow()
+    
+    # Set color based on overall status
+    if any(health_status.get(service, {}).get('status') == 'offline' for service in ['plex', 'radarr', 'sonarr']):
+        embed.color = discord.Color.red()
+    elif any(health_status.get(service, {}).get('status') in ['error', 'unknown'] for service in ['plex', 'radarr', 'sonarr']):
+        embed.color = discord.Color.orange()
     
     return embed

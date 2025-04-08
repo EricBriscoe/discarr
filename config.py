@@ -33,8 +33,12 @@ RADARR_API_KEY = os.getenv('RADARR_API_KEY')
 SONARR_URL = os.getenv('SONARR_URL', 'http://localhost:8989')
 SONARR_API_KEY = os.getenv('SONARR_API_KEY')
 
+# Plex settings (media server)
+PLEX_URL = os.getenv('PLEX_URL', 'http://localhost:32400')
+
 # General application settings
 CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', 300))  # Default: check every 5 minutes
+HEALTH_CHECK_INTERVAL = int(os.getenv('HEALTH_CHECK_INTERVAL', 60))  # Default: check health every minute
 VERBOSE = os.getenv('VERBOSE', 'false').lower() == 'true'
 
 # Create a logger
@@ -45,5 +49,7 @@ def log_config_status():
     logger.info(f"Discord channel ID: {DISCORD_CHANNEL_ID}")
     logger.info(f"Using Radarr URL: {RADARR_URL}")
     logger.info(f"Using Sonarr URL: {SONARR_URL}")
+    logger.info(f"Using Plex URL: {PLEX_URL}")
     logger.info(f"Check interval: {CHECK_INTERVAL} seconds")
+    logger.info(f"Health check interval: {HEALTH_CHECK_INTERVAL} seconds")
     logger.info(f"Verbose mode: {VERBOSE}")

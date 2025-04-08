@@ -5,7 +5,7 @@ Provides helpers for time formatting, status display, and text handling.
 import logging
 import re
 import pytz
-from datetime import datetime
+from datetime import datetime, timezone
 import config
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,11 @@ def get_status_emoji(status):
         "failedpending": "⚠️❌",
         "ignored": "🔕",
         "warning": "⚠️",
+        "online": "🟢",
+        "offline": "🔴",
+        "error": "🟠",
+        "disabled": "⚫",
+        "unknown": "❓",
     }
     
     return emojis.get(status, "🔄")
@@ -100,3 +105,56 @@ def truncate_title(title, max_length=50):
         return title[:year_match.end()] + "..."
     
     return title[:max_length] + "..."
+
+def format_relative_time(dt):
+    """Format a datetime as a relative time string (e.g., '5 minutes ago').
+    
+    Args:
+        dt: The datetime to format (must have timezone info)
+        
+    Returns:
+        A string representing the relative time
+    """
+    if not dt:
+        return "unknown"
+    
+    # Ensure dt has timezone info
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    
+    now = datetime.now(timezone.utc)
+    diff = now - dt
+    
+    # Calculate the time difference in various units
+    total_seconds = int(diff.total_seconds())
+    
+    if total_seconds < 0:
+        return "in the future"  # This shouldn't happen unless clocks are out of sync
+    
+    # Less than a minute
+    if total_seconds < 60:
+        return "just now"
+    
+    # Less than an hour
+    if total_seconds < 3600:
+        minutes = total_seconds // 60
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    
+    # Less than a day
+    if total_seconds < 86400:
+        hours = total_seconds // 3600
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    
+    # Less than 30 days
+    if total_seconds < 2592000:
+        days = total_seconds // 86400
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    
+    # Less than a year
+    if total_seconds < 31536000:
+        months = total_seconds // 2592000
+        return f"{months} month{'s' if months != 1 else ''} ago"
+    
+    # More than a year
+    years = total_seconds // 31536000
+    return f"{years} year{'s' if years != 1 else ''} ago"
