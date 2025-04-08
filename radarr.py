@@ -2,6 +2,7 @@ import requests
 import logging
 from config import RADARR_URL, RADARR_API_KEY, VERBOSE
 from arr_client import ArrClient
+from utils import format_discord_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class RadarrClient(ArrClient):
             
     def get_movie_by_id(self, movie_id):
         """Get movie details by ID"""
-        if movie_id in self.movie_cache:
+        if (movie_id in self.movie_cache):
             return self.movie_cache[movie_id]
             
         try:
@@ -61,6 +62,60 @@ class RadarrClient(ArrClient):
         return {
             "title": movie_title
         }
+
+    def get_queue_items(self):
+        """Get all movies in the queue regardless of status"""
+        queue = self.get_queue()
+        items = []
+        
+        if self.verbose:
+            logger.debug(f"Processing {len(queue.get('records', []))} items from Radarr queue")
+        
+        for item in queue.get("records", []):
+            # Get basic status information
+            item_id = item.get("id", 0)
+            status = item.get("status", "unknown")
+            tracked_status = item.get("trackedDownloadState", status)
+            
+            # Extract media-specific information
+            media_info = self.get_media_info(item)
+            
+            # Calculate progress
+            progress = 0
+            if "sizeleft" in item and "size" in item and item["size"] > 0:
+                progress = 100 * (1 - item["sizeleft"] / item["size"])
+            else:
+                progress = item.get("progress", 0)
+            
+            size = item.get("size", 0) / (1024 * 1024 * 1024)  # Convert to GB
+            
+            # Parse time left - use estimatedCompletionTime as Discord relative timestamp if available
+            time_left = "∞"
+            if "estimatedCompletionTime" in item and item["estimatedCompletionTime"]:
+                time_left = format_discord_timestamp(item["estimatedCompletionTime"])
+            elif "timeleft" in item:
+                time_str = item.get("timeleft", "")
+                time_left = self.parse_time_left(time_str)
+            
+            if self.verbose:
+                logger.debug(f"Queue item: {media_info['title']} ({tracked_status})")
+            
+            queue_item = {
+                "id": item_id,
+                "title": media_info["title"],
+                "progress": progress,
+                "size": size,
+                "sizeleft": item.get("sizeleft", 0),
+                "time_left": time_left,
+                "status": tracked_status or status,
+                "protocol": item.get("protocol", "unknown"),
+                "download_client": item.get("downloadClient", "unknown"),
+                "errorMessage": item.get("errorMessage", ""),
+                "added": item.get("added", ""),
+            }
+            items.append(queue_item)
+                
+        return items
 
     def get_download_updates(self):
         """Get updates for downloads that need to be reported to Discord"""
