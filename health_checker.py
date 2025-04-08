@@ -56,12 +56,12 @@ class HealthChecker:
                         'error': f"Status code: {response.status_code}"
                     }
                     return False
-        except requests.RequestException as e:
+        except requests.RequestException:
             with self.status_lock:
                 self.health_status['radarr'] = {
                     'status': 'offline',
-                    'last_check': datetime.now(),
-                    'error': str(e)
+                    'last_check': datetime.now()
+                    # No error details included for offline status
                 }
             return False
             
@@ -99,12 +99,12 @@ class HealthChecker:
                         'error': f"Status code: {response.status_code}"
                     }
                     return False
-        except requests.RequestException as e:
+        except requests.RequestException:
             with self.status_lock:
                 self.health_status['sonarr'] = {
                     'status': 'offline',
-                    'last_check': datetime.now(),
-                    'error': str(e)
+                    'last_check': datetime.now()
+                    # No error details included for offline status
                 }
             return False
     
@@ -155,12 +155,12 @@ class HealthChecker:
                         'error': f"Status code: {response.status_code}"
                     }
                     return False
-        except requests.RequestException as e:
+        except requests.RequestException:
             with self.status_lock:
                 self.health_status['plex'] = {
                     'status': 'offline',
-                    'last_check': datetime.now(),
-                    'error': str(e)
+                    'last_check': datetime.now()
+                    # No error details included for offline status
                 }
             return False
     
