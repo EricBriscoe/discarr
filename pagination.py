@@ -15,7 +15,7 @@ REACTION_CONTROLS = [FIRST_PAGE, PREV_PAGE, NEXT_PAGE, LAST_PAGE]
 class PaginationManager:
     """Manages pagination state for movies and TV shows."""
     
-    def __init__(self, items_per_page=5):
+    def __init__(self, items_per_page=3):  # Reduced from 5 to 3 to stay under field limit
         """Initialize pagination state."""
         self.items_per_page = items_per_page
         # Separate page counters for movies and TV

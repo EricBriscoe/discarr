@@ -2,12 +2,15 @@
 Message formatting utilities for Discarr bot.
 Handles formatting movie and TV show information for Discord messages.
 """
+import logging
+import time
+from datetime import datetime
+
 import discord
 import pytz
-import logging
-from datetime import datetime
-from utils import get_status_emoji, truncate_title, format_relative_time
-from pagination import FIRST_PAGE, PREV_PAGE, NEXT_PAGE, LAST_PAGE
+
+from pagination import FIRST_PAGE, LAST_PAGE, NEXT_PAGE, PREV_PAGE
+from utils import format_discord_timestamp, get_status_emoji, truncate_title
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +45,13 @@ def format_movie_section(movie_downloads, pagination_manager):
     current_page, total_pages = pagination_manager.get_pagination_info(is_movie=True)
     
     if not movie_downloads:
-        return "No movies in queue."
+        return [], "No movies in queue."
         
     start_idx, end_idx = pagination_manager.get_page_indices(is_movie=True)
     end_idx = min(end_idx, len(movie_downloads))
     
-    content = ""
+    embed_fields = []
+    
     for i in range(start_idx, end_idx):
         movie = movie_downloads[i]
         title = truncate_title(movie['title'])
@@ -64,12 +68,28 @@ def format_movie_section(movie_downloads, pagination_manager):
         # Create the progress bar
         progress_bar = create_progress_bar(movie['progress'])
         
-        # Format the movie entry
-        content += f"{status_emoji} **{title}**\n"
-        content += f"Status: `{display_status}` | Size: `{movie['size']:.2f} GB` | Time Left: `{time_left}`\n"
-        content += f"{progress_bar}\n\n"
-    
-    return content
+        # Add title field with progress bar
+        embed_fields.append({
+            "name": f"{status_emoji} {title}",
+            "value": f"Progress: {progress_bar}",
+            "inline": False
+        })
+        
+        # Add combined status and size field
+        embed_fields.append({
+            "name": "Status & Size",
+            "value": f"**Status:** `{display_status}`\n**Size:** `{movie['size']:.2f} GB`",
+            "inline": True
+        })
+        
+        # Add time left in its own field for proper rendering
+        embed_fields.append({
+            "name": "Time Left",
+            "value": time_left,
+            "inline": True
+        })
+        
+    return embed_fields, None
 
 def format_tv_section(tv_downloads, pagination_manager):
     """Format the TV section of the embed."""
@@ -77,16 +97,17 @@ def format_tv_section(tv_downloads, pagination_manager):
     current_page, total_pages = pagination_manager.get_pagination_info(is_movie=False)
     
     if not tv_downloads:
-        return "No TV shows in queue."
+        return [], "No TV shows in queue."
         
     start_idx, end_idx = pagination_manager.get_page_indices(is_movie=False)
     end_idx = min(end_idx, len(tv_downloads))
     
-    content = ""
+    embed_fields = []
+    
     for i in range(start_idx, end_idx):
         tv = tv_downloads[i]
         series = truncate_title(tv['series'], 40)
-        time_left = tv.get('time_left', 'unknown')
+        eta = tv.get('estimatedCompletionTime', None)
         display_status = tv.get('status', 'unknown')
         
         # Include error messages if present
@@ -99,12 +120,28 @@ def format_tv_section(tv_downloads, pagination_manager):
         # Create the progress bar
         progress_bar = create_progress_bar(tv['progress'])
         
-        # Format the TV entry
-        content += f"{status_emoji} **{series} S{tv['season']:02d}E{tv['episode_number']:02d}**\n"
-        content += f"Status: `{display_status}` | Size: `{tv['size']:.2f} GB` | Time Left: `{time_left}`\n"
-        content += f"{progress_bar}\n\n"
-    
-    return content
+        # Add title field with progress bar
+        embed_fields.append({
+            "name": f"{status_emoji} {series} S{tv['season']:02d}E{tv['episode_number']:02d}",
+            "value": f"Progress: {progress_bar}",
+            "inline": False
+        })
+        
+        # Add combined status and size field
+        embed_fields.append({
+            "name": "Status & Size",
+            "value": f"**Status:** `{display_status}`\n**Size:** `{tv['size']:.2f} GB`",
+            "inline": True
+        })
+        
+        # Add time left in its own field for proper rendering
+        embed_fields.append({
+            "name": "Time Left",
+            "value": format_discord_timestamp(eta),
+            "inline": True
+        })
+        
+    return embed_fields, None
 
 def format_summary_message(movie_downloads, tv_downloads, pagination_manager, last_updated=None):
     """Format the complete summary message as a Discord embed."""
@@ -123,28 +160,41 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
     tv_current_page, tv_total_pages = pagination_manager.get_pagination_info(is_movie=False)
     
     # Add movie section with page indicator in the name
-    movie_section = format_movie_section(movie_downloads, pagination_manager)
+    movie_fields, movie_empty_message = format_movie_section(movie_downloads, pagination_manager)
+    
+    # Add movie header
     embed.add_field(
         name=f"🎬 Movies (Page {movie_current_page}/{movie_total_pages})",
-        value=movie_section,
+        value=movie_empty_message if movie_empty_message else "\u200b",
         inline=False
     )
     
+    # Add all movie fields if we have any
+    if not movie_empty_message:
+        for field in movie_fields:
+            embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
+    
     # Add TV section with page indicator in the name
-    tv_section = format_tv_section(tv_downloads, pagination_manager)
+    tv_fields, tv_empty_message = format_tv_section(tv_downloads, pagination_manager)
+    
+    # Add TV header
     embed.add_field(
         name=f"📺 TV Shows (Page {tv_current_page}/{tv_total_pages})",
-        value=tv_section,
+        value=tv_empty_message if tv_empty_message else "\u200b",
         inline=False
     )
+    
+    # Add all TV fields if we have any
+    if not tv_empty_message:
+        for field in tv_fields:
+            embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
     
     # Add navigation controls as footer
     controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
     
     # Add relative time if provided
     if last_updated:
-        relative_time = format_relative_time(last_updated)
-        footer_text = f"{controls} • Last updated: {relative_time}"
+        footer_text = f"{controls}"
     else:
         footer_text = controls
         
@@ -206,12 +256,19 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
     
     # Add movie section
     if radarr_ready:
-        movie_section = format_movie_section(movie_downloads, pagination_manager)
+        movie_fields, movie_empty_message = format_movie_section(movie_downloads, pagination_manager)
+        
+        # Add movie header
         embed.add_field(
             name=f"🎬 Movies (Page {movie_current_page}/{movie_total_pages})",
-            value=movie_section,
+            value=movie_empty_message if movie_empty_message else "\u200b",
             inline=False
         )
+        
+        # Add all movie fields if we have any
+        if not movie_empty_message:
+            for field in movie_fields:
+                embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
     else:
         embed.add_field(
             name="🎬 Movies",
@@ -221,12 +278,19 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
     
     # Add TV section
     if sonarr_ready:
-        tv_section = format_tv_section(tv_downloads, pagination_manager)
+        tv_fields, tv_empty_message = format_tv_section(tv_downloads, pagination_manager)
+        
+        # Add TV header
         embed.add_field(
             name=f"📺 TV Shows (Page {tv_current_page}/{tv_total_pages})",
-            value=tv_section,
+            value=tv_empty_message if tv_empty_message else "\u200b",
             inline=False
         )
+        
+        # Add all TV fields if we have any
+        if not tv_empty_message:
+            for field in tv_fields:
+                embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
     else:
         embed.add_field(
             name="📺 TV Shows",
@@ -239,8 +303,8 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
     
     # Add relative time if provided
     if last_updated:
-        relative_time = format_relative_time(last_updated)
-        footer_text = f"{controls} • Last updated: {relative_time}"
+        relative_time = format_discord_timestamp(last_updated)
+        footer_text = f"{controls}"
     else:
         footer_text = controls
         
@@ -267,46 +331,33 @@ def format_health_status_message(health_status, last_updated=None):
         description="Current health status of media server services"
     )
     
-    # Add Plex status field
+    # Add Plex status field - without individual timestamp
     plex_status = health_status.get('plex', {'status': 'unknown'})
     plex_emoji = get_status_emoji(plex_status.get('status', 'unknown'))
-    plex_content = f"{plex_emoji} **Status:** {plex_status.get('status', 'unknown')}\n"
-    
-    # Add last check time
-    plex_check_time = plex_status.get('last_check')
-    if plex_check_time:
-        plex_content += f"**Last Check:** {format_relative_time(plex_check_time)}"
+    plex_content = f"{plex_emoji} **Status:** {plex_status.get('status', 'unknown')}"
     
     embed.add_field(name="🎞️ Plex Media Server", value=plex_content, inline=False)
     
-    # Add Radarr status field
+    # Add Radarr status field - without individual timestamp
     radarr_status = health_status.get('radarr', {'status': 'unknown'})
     radarr_emoji = get_status_emoji(radarr_status.get('status', 'unknown'))
-    radarr_content = f"{radarr_emoji} **Status:** {radarr_status.get('status', 'unknown')}\n"
+    radarr_content = f"{radarr_emoji} **Status:** {radarr_status.get('status', 'unknown')}"
     
-    # Add last check time
-    radarr_check_time = radarr_status.get('last_check')
-    if radarr_check_time:
-        radarr_content += f"**Last Check:** {format_relative_time(radarr_check_time)}"
+    embed.add_field(name="🎬 Radarr", value=radarr_content, inline=False)
     
-    embed.add_field(name="🎬 Radarr", value=radarr_content, inline=True)
-    
-    # Add Sonarr status field
+    # Add Sonarr status field - without individual timestamp
     sonarr_status = health_status.get('sonarr', {'status': 'unknown'})
     sonarr_emoji = get_status_emoji(sonarr_status.get('status', 'unknown'))
-    sonarr_content = f"{sonarr_emoji} **Status:** {sonarr_status.get('status', 'unknown')}\n"
+    sonarr_content = f"{sonarr_emoji} **Status:** {sonarr_status.get('status', 'unknown')}"
     
-    # Add last check time
-    sonarr_check_time = sonarr_status.get('last_check')
-    if sonarr_check_time:
-        sonarr_content += f"**Last Check:** {format_relative_time(sonarr_check_time)}"
-    
-    embed.add_field(name="📺 Sonarr", value=sonarr_content, inline=True)
+    embed.add_field(name="📺 Sonarr", value=sonarr_content, inline=False)
     
     # Add overall status in footer with relative time
-    if last_updated:
-        relative_time = format_relative_time(last_updated)
-        embed.set_footer(text=f"Last updated: {relative_time}")
+    embed.add_field(
+        name="Last Updated",
+        value=format_discord_timestamp(datetime.now().isoformat()) ,
+        inline=False
+    )
     
     # Add timestamp for Discord's internal tracking
     embed.timestamp = discord.utils.utcnow()

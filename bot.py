@@ -3,8 +3,15 @@ Main entry point for Discarr Discord bot.
 Handles initialization and configuration of the bot components.
 """
 import logging
+import argparse
 from discord_client import DiscordClient
 import config
+
+def parse_arguments():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description="Discarr Discord bot for Radarr and Sonarr")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    return parser.parse_args()
 
 def configure_logging():
     """Configure the logging system."""
@@ -45,9 +52,17 @@ def validate_config():
 
 def main():
     """Main function to start the bot."""
+    # Parse command-line arguments
+    args = parse_arguments()
+    
+    # Override VERBOSE setting if --verbose flag is used
+    if args.verbose:
+        config.VERBOSE = True
+    
     # Configure logging
     logger = configure_logging()
     logger.info("Starting Discarr bot...")
+    logger.debug("Verbose mode enabled via command-line argument") if args.verbose else None
     
     # Validate configuration
     if not validate_config():
