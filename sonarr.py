@@ -2,6 +2,7 @@ import requests
 import logging
 from config import SONARR_URL, SONARR_API_KEY, VERBOSE
 from arr_client import ArrClient
+from utils import format_discord_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class SonarrClient(ArrClient):
 
     def get_series_by_id(self, series_id):
         """Get series details by ID"""
-        if series_id in self.series_cache:
+        if (series_id in self.series_cache):
             return self.series_cache[series_id]
         
         try:
@@ -47,7 +48,7 @@ class SonarrClient(ArrClient):
 
     def get_episode_by_id(self, episode_id):
         """Get episode details by ID"""
-        if episode_id in self.episode_cache:
+        if (episode_id in self.episode_cache):
             return self.episode_cache[episode_id]
             
         try:
@@ -133,15 +134,13 @@ class SonarrClient(ArrClient):
             
             size = item.get("size", 0) / (1024 * 1024 * 1024)  # Convert to GB
             
-            # Parse time left
-            time_left = "unknown"
+            # Parse time left - use estimatedCompletionTime as Discord relative timestamp if available
+            time_left = "∞"
             if "estimatedCompletionTime" in item and item["estimatedCompletionTime"]:
-                try:
-                    time_str = item.get("timeleft", "timeleft not found")
-                    time_left = self.parse_time_left(time_str)
-                except Exception as e:
-                    if self.verbose:
-                        logger.debug(f"Error calculating time left: {e}")
+                time_left = format_discord_timestamp(item["estimatedCompletionTime"])
+            elif "timeleft" in item:
+                time_str = item.get("timeleft", "")
+                time_left = self.parse_time_left(time_str)
             
             if self.verbose:
                 logger.debug(f"Queue item: {media_info['series']} - S{media_info['season']:02d}E{media_info['episode_number']:02d} ({tracked_status})")

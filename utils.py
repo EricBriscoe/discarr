@@ -158,3 +158,30 @@ def format_relative_time(dt):
     # More than a year
     years = total_seconds // 31536000
     return f"{years} year{'s' if years != 1 else ''} ago"
+
+def format_discord_timestamp(iso_time_str, format_code="R"):
+    """Convert ISO timestamp to Discord's timestamp format that updates automatically.
+    
+    Args:
+        iso_time_str: ISO formatted timestamp string (e.g. "2023-10-10T15:30:45Z")
+        format_code: Discord's format code (R=relative, F=full date/time, etc.)
+    
+    Returns:
+        Discord timestamp format string like <t:1234567890:R>
+    """
+    try:
+        if not iso_time_str:
+            return "∞"
+            
+        # Parse ISO timestamp to datetime
+        dt = datetime.fromisoformat(iso_time_str.replace('Z', '+00:00'))
+        
+        # Convert to Unix timestamp (seconds since epoch)
+        unix_timestamp = int(dt.timestamp())
+        
+        # Return Discord's timestamp format
+        return f"<t:{unix_timestamp}:{format_code}>"
+    except Exception as e:
+        if config.VERBOSE:
+            logger.debug(f"Error formatting Discord timestamp: {e}")
+        return "∞"
