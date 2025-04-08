@@ -168,14 +168,36 @@ class DiscordClient:
                 
             await interaction.response.defer(ephemeral=True)
             
-            # Remove inactive items from both Radarr and Sonarr
-            radarr_count = self.download_monitor.radarr_client.remove_inactive_items()
-            sonarr_count = self.download_monitor.sonarr_client.remove_inactive_items()
+            # Get all queue items
+            radarr_items = self.download_monitor.radarr_client.get_queue_items()
+            sonarr_items = self.download_monitor.sonarr_client.get_queue_items()
+            all_items = radarr_items + sonarr_items
+            
+            # Check if all items have unknown or infinity time remaining
+            all_unknown_time = False
+            if all_items:
+                all_unknown_time = all(
+                    item.get("time_left") == "unknown" or 
+                    item.get("time_left") == "∞" 
+                    for item in all_items
+                )
+            
+            # Choose the removal method based on the time remaining condition
+            if all_unknown_time and all_items:
+                # If all items have unknown time remaining, remove all items
+                radarr_count = self.download_monitor.radarr_client.remove_all_items()
+                sonarr_count = self.download_monitor.sonarr_client.remove_all_items()
+                removal_type = "all"
+            else:
+                # Otherwise, only remove inactive items (original behavior)
+                radarr_count = self.download_monitor.radarr_client.remove_inactive_items()
+                sonarr_count = self.download_monitor.sonarr_client.remove_inactive_items()
+                removal_type = "inactive"
             
             # Create response embed
             embed = discord.Embed(
                 title="Queue Cleanup Completed",
-                description=f"Removed {radarr_count + sonarr_count} inactive items from download queues.",
+                description=f"Removed {radarr_count + sonarr_count} {removal_type} items from download queues.",
                 color=discord.Color.green()
             )
             

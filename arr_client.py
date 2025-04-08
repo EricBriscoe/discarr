@@ -206,3 +206,37 @@ class ArrClient(ABC):
             if self.verbose and hasattr(e, 'response') and e.response:
                 logger.debug(f"Response: {e.response.status_code} - {e.response.text[:200]}...")
             return 0
+            
+    def remove_all_items(self):
+        """Remove all items from the queue regardless of status"""
+        queue_items = self.get_queue_items()
+        all_ids = [item["id"] for item in queue_items]
+        
+        if not all_ids:
+            return 0
+        
+        try:
+            url = f"{self.base_url}/api/v3/queue/bulk"
+            payload = {"ids": all_ids}
+            params = {
+                "removeFromClient": True,
+                "blocklist": False,
+                "skipRedownload": False,
+                "changeCategory": False
+            }
+            
+            if self.verbose:
+                logger.debug(f"Removing ALL {len(all_ids)} items from queue")
+                
+            response = requests.delete(url, headers=self.headers, params=params, json=payload)
+            response.raise_for_status()
+            
+            if self.verbose:
+                logger.debug(f"Successfully removed all {len(all_ids)} items from queue")
+                
+            return len(all_ids)
+        except requests.RequestException as e:
+            logger.error(f"Error removing all items: {e}")
+            if self.verbose and hasattr(e, 'response') and e.response:
+                logger.debug(f"Response: {e.response.status_code} - {e.response.text[:200]}...")
+            return 0
