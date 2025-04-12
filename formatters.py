@@ -9,7 +9,7 @@ from datetime import datetime
 import discord
 import pytz
 
-from pagination import FIRST_PAGE, LAST_PAGE, NEXT_PAGE, PREV_PAGE
+from pagination import FIRST_PAGE_EMOJI, LAST_PAGE_EMOJI, NEXT_PAGE_EMOJI, PREV_PAGE_EMOJI
 from utils import format_discord_timestamp, get_status_emoji, truncate_title
 
 logger = logging.getLogger(__name__)
@@ -192,7 +192,7 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
             embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
     
     # Add navigation controls as footer
-    controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
+    controls = f"{FIRST_PAGE_EMOJI} First | {PREV_PAGE_EMOJI} Previous | {NEXT_PAGE_EMOJI} Next | {LAST_PAGE_EMOJI} Last"
     
     # Add relative time if provided
     if last_updated:
@@ -229,7 +229,7 @@ def format_loading_message():
     )
     
     # Add navigation controls as footer
-    controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
+    controls = f"{FIRST_PAGE_EMOJI} First | {PREV_PAGE_EMOJI} Previous | {NEXT_PAGE_EMOJI} Next | {LAST_PAGE_EMOJI} Last"
     embed.set_footer(text=controls)
     
     # Add timestamp
@@ -301,7 +301,7 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
         )
     
     # Add navigation controls as footer
-    controls = f"{FIRST_PAGE} First | {PREV_PAGE} Previous | {NEXT_PAGE} Next | {LAST_PAGE} Last"
+    controls = f"{FIRST_PAGE_EMOJI} First | {PREV_PAGE_EMOJI} Previous | {NEXT_PAGE_EMOJI} Next | {LAST_PAGE_EMOJI} Last"
     
     # Add relative time if provided
     if last_updated:
