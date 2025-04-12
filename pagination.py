@@ -10,18 +10,18 @@ PREV_PAGE_ID = "pagination_prev"
 NEXT_PAGE_ID = "pagination_next"
 LAST_PAGE_ID = "pagination_last"
 
-# Button labels and emojis
-FIRST_PAGE_EMOJI = "⏮️"
-PREV_PAGE_EMOJI = "◀️"
-NEXT_PAGE_EMOJI = "▶️"
-LAST_PAGE_EMOJI = "⏭️"
+# Button labels for navigation
+FIRST_PAGE_LABEL = "First"
+PREV_PAGE_LABEL = "Previous"
+NEXT_PAGE_LABEL = "Next"
+LAST_PAGE_LABEL = "Last"
 
 # Button definitions for view creation
 BUTTON_CONTROLS = [
-    {"id": FIRST_PAGE_ID, "emoji": FIRST_PAGE_EMOJI, "style": "secondary"},
-    {"id": PREV_PAGE_ID, "emoji": PREV_PAGE_EMOJI, "style": "primary"},
-    {"id": NEXT_PAGE_ID, "emoji": NEXT_PAGE_EMOJI, "style": "primary"},
-    {"id": LAST_PAGE_ID, "emoji": LAST_PAGE_EMOJI, "style": "secondary"}
+    {"id": FIRST_PAGE_ID, "emoji": FIRST_PAGE_LABEL, "style": "secondary"},
+    {"id": PREV_PAGE_ID, "emoji": PREV_PAGE_LABEL, "style": "primary"},
+    {"id": NEXT_PAGE_ID, "emoji": NEXT_PAGE_LABEL, "style": "primary"},
+    {"id": LAST_PAGE_ID, "emoji": LAST_PAGE_LABEL, "style": "secondary"}
 ]
 
 class PaginationManager:
@@ -76,13 +76,13 @@ class PaginationManager:
     # For backward compatibility
     def handle_reaction(self, reaction_emoji):
         """Legacy method for handling reactions - maps to button handling."""
-        if reaction_emoji == FIRST_PAGE_EMOJI:
+        if reaction_emoji == FIRST_PAGE_LABEL:
             return self.handle_button(FIRST_PAGE_ID)
-        elif reaction_emoji == PREV_PAGE_EMOJI:
+        elif reaction_emoji == PREV_PAGE_LABEL:
             return self.handle_button(PREV_PAGE_ID)
-        elif reaction_emoji == NEXT_PAGE_EMOJI:
+        elif reaction_emoji == NEXT_PAGE_LABEL:
             return self.handle_button(NEXT_PAGE_ID)
-        elif reaction_emoji == LAST_PAGE_EMOJI:
+        elif reaction_emoji == LAST_PAGE_LABEL:
             return self.handle_button(LAST_PAGE_ID)
         return False
     

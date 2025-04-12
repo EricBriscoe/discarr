@@ -9,7 +9,6 @@ from datetime import datetime
 import discord
 import pytz
 
-from pagination import FIRST_PAGE_EMOJI, LAST_PAGE_EMOJI, NEXT_PAGE_EMOJI, PREV_PAGE_EMOJI
 from utils import format_discord_timestamp, get_status_emoji, truncate_title
 
 logger = logging.getLogger(__name__)
@@ -191,16 +190,12 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
         for field in tv_fields:
             embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
     
-    # Add navigation controls as footer
-    controls = f"{FIRST_PAGE_EMOJI} First | {PREV_PAGE_EMOJI} Previous | {NEXT_PAGE_EMOJI} Next | {LAST_PAGE_EMOJI} Last"
+    # No need to add navigation controls to footer, the buttons will be self-explanatory
     
     # Add relative time if provided
     if last_updated:
-        footer_text = f"{controls}"
-    else:
-        footer_text = controls
-        
-    embed.set_footer(text=footer_text)
+        footer_text = format_discord_timestamp(last_updated)
+        embed.set_footer(text=footer_text)
     
     # Add timestamp (still needed for Discord's internal tracking)
     embed.timestamp = discord.utils.utcnow()
@@ -228,9 +223,7 @@ def format_loading_message():
         inline=False
     )
     
-    # Add navigation controls as footer
-    controls = f"{FIRST_PAGE_EMOJI} First | {PREV_PAGE_EMOJI} Previous | {NEXT_PAGE_EMOJI} Next | {LAST_PAGE_EMOJI} Last"
-    embed.set_footer(text=controls)
+    # No need for navigation controls in footer
     
     # Add timestamp
     embed.timestamp = discord.utils.utcnow()
@@ -300,17 +293,12 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
             inline=False
         )
     
-    # Add navigation controls as footer
-    controls = f"{FIRST_PAGE_EMOJI} First | {PREV_PAGE_EMOJI} Previous | {NEXT_PAGE_EMOJI} Next | {LAST_PAGE_EMOJI} Last"
+    # No need to add navigation controls to footer
     
     # Add relative time if provided
     if last_updated:
-        relative_time = format_discord_timestamp(last_updated)
-        footer_text = f"{controls}"
-    else:
-        footer_text = controls
-        
-    embed.set_footer(text=footer_text)
+        footer_text = format_discord_timestamp(last_updated)
+        embed.set_footer(text=footer_text)
     
     # Add timestamp
     embed.timestamp = discord.utils.utcnow()

@@ -39,8 +39,8 @@ class PaginationView(discord.ui.View):
             # Create the button with the specified properties
             btn = discord.ui.Button(
                 custom_id=button_config["id"],
-                emoji=button_config["emoji"],
-                style=getattr(discord.ButtonStyle, button_config["style"].upper())
+                label=button_config["emoji"],
+                style=getattr(discord.ButtonStyle, button_config["style"])
             )
             # Set the callback for when the button is pressed
             btn.callback = self.button_callback
