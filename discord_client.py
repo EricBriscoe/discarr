@@ -147,50 +147,61 @@ class DiscordClient:
                 await interaction.response.send_message("You need administrator permissions to use this command.", ephemeral=True)
                 return
                 
+            # Always acknowledge the interaction immediately to avoid timeout
             await interaction.response.defer(ephemeral=True)
             
-            # Get all queue items
-            radarr_items = self.download_monitor.radarr_client.get_queue_items()
-            logger.debug(f"Radarr queue items: {radarr_items}")
-            sonarr_items = self.download_monitor.sonarr_client.get_queue_items()
-            all_items = radarr_items + sonarr_items
-            
-            # Check if all items have unknown or infinity time remaining
-            all_unknown_time = False
-            if all_items:
-                all_unknown_time = all(
-                    item.get("time_left") == "unknown" or 
-                    item.get("time_left") == "∞"
-                    for item in all_items
+            try:
+                # Create message to indicate we're working on it
+                await interaction.followup.send("Processing cleanup request...", ephemeral=True)
+                
+                # Get all queue items
+                radarr_items = self.download_monitor.radarr_client.get_queue_items()
+                logger.debug(f"Radarr queue items: {radarr_items}")
+                sonarr_items = self.download_monitor.sonarr_client.get_queue_items()
+                all_items = radarr_items + sonarr_items
+                
+                # Check if all items have unknown or infinity time remaining
+                all_unknown_time = False
+                if all_items:
+                    all_unknown_time = all(
+                        item.get("time_left") == "unknown" or 
+                        item.get("time_left") == "∞"
+                        for item in all_items
+                    )
+                
+                # Choose the removal method based on the time remaining condition
+                if all_unknown_time and all_items:
+                    # If all items have unknown time remaining, remove all items
+                    radarr_count = self.download_monitor.radarr_client.remove_all_items()
+                    sonarr_count = self.download_monitor.sonarr_client.remove_all_items()
+                    removal_type = "all"
+                else:
+                    # Otherwise, only remove inactive items (original behavior)
+                    radarr_count = self.download_monitor.radarr_client.remove_inactive_items()
+                    sonarr_count = self.download_monitor.sonarr_client.remove_inactive_items()
+                    removal_type = "inactive"
+                
+                # Create response embed
+                embed = discord.Embed(
+                    title="Queue Cleanup Completed",
+                    description=f"Removed {radarr_count + sonarr_count} {removal_type} items from download queues.",
+                    color=discord.Color.green()
                 )
-            
-            # Choose the removal method based on the time remaining condition
-            if all_unknown_time and all_items:
-                # If all items have unknown time remaining, remove all items
-                radarr_count = self.download_monitor.radarr_client.remove_all_items()
-                sonarr_count = self.download_monitor.sonarr_client.remove_all_items()
-                removal_type = "all"
-            else:
-                # Otherwise, only remove inactive items (original behavior)
-                radarr_count = self.download_monitor.radarr_client.remove_inactive_items()
-                sonarr_count = self.download_monitor.sonarr_client.remove_inactive_items()
-                removal_type = "inactive"
-            
-            # Create response embed
-            embed = discord.Embed(
-                title="Queue Cleanup Completed",
-                description=f"Removed {radarr_count + sonarr_count} {removal_type} items from download queues.",
-                color=discord.Color.green()
-            )
-            
-            embed.add_field(name="Radarr", value=f"{radarr_count} items removed", inline=True)
-            embed.add_field(name="Sonarr", value=f"{sonarr_count} items removed", inline=True)
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-            # Refresh the queue display
-            if self.download_monitor:
-                await self.download_monitor.check_downloads()
+                
+                embed.add_field(name="Radarr", value=f"{radarr_count} items removed", inline=True)
+                embed.add_field(name="Sonarr", value=f"{sonarr_count} items removed", inline=True)
+                
+                # Send the final response
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                
+                # Refresh the queue display
+                if self.download_monitor:
+                    # Use create_task to avoid blocking this interaction
+                    asyncio.create_task(self.download_monitor.check_downloads())
+                    
+            except Exception as e:
+                logger.error(f"Error in cleanup command: {e}", exc_info=True)
+                await interaction.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
     
     async def run(self):
         """Run the Discord bot."""
