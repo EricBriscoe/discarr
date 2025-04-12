@@ -17,10 +17,51 @@ from formatters import (
     format_partial_loading_message,
     format_health_status_message
 )
-from pagination import PaginationManager, REACTION_CONTROLS
+from pagination import PaginationManager, BUTTON_CONTROLS
 from cache_manager import CacheManager
 
 logger = logging.getLogger(__name__)
+
+class PaginationView(discord.ui.View):
+    """View containing pagination buttons."""
+    
+    def __init__(self, download_monitor):
+        """Initialize the pagination view.
+        
+        Args:
+            download_monitor: Reference to the DownloadMonitor instance
+        """
+        super().__init__(timeout=None)  # Persistent view that doesn't time out
+        self.download_monitor = download_monitor
+        
+        # Add buttons based on the BUTTON_CONTROLS configuration
+        for button_config in BUTTON_CONTROLS:
+            # Create the button with the specified properties
+            btn = discord.ui.Button(
+                custom_id=button_config["id"],
+                emoji=button_config["emoji"],
+                style=getattr(discord.ButtonStyle, button_config["style"].upper())
+            )
+            # Set the callback for when the button is pressed
+            btn.callback = self.button_callback
+            # Add the button to the view
+            self.add_item(btn)
+            
+    async def button_callback(self, interaction):
+        """Handle button press events."""
+        # Get the custom_id of the pressed button
+        button_id = interaction.data["custom_id"]
+        
+        # Update pagination state based on the button press
+        if self.download_monitor.pagination.handle_button(button_id):
+            # Acknowledge the interaction without sending a response
+            await interaction.response.defer(ephemeral=True)
+            
+            # Update the display with the new pagination state
+            await self.download_monitor.check_downloads()
+        else:
+            # No state change (likely at first/last page already)
+            await interaction.response.defer(ephemeral=True)
 
 class DownloadMonitor:
     """Monitors downloads from Radarr and Sonarr and updates Discord."""
@@ -39,6 +80,7 @@ class DownloadMonitor:
         self.radarr_client = RadarrClient()
         self.sonarr_client = SonarrClient()
         self.pagination = PaginationManager()
+        self.pagination_view = PaginationView(self)
         self.check_loop = None  # Initialize as None, will create later
         self.health_check_loop = None  # Initialize health check loop as None
         # Initialize the cache manager
@@ -197,11 +239,9 @@ class DownloadMonitor:
                 
                 # Create download summary message next (appears above health)
                 summary_embed = format_loading_message()
-                summary_message = await channel.send(embed=summary_embed)
+                summary_message = await channel.send(embed=summary_embed, view=self.pagination_view)
                 self.summary_message_id = summary_message.id
                 
-                # Add pagination controls to summary message
-                await self.add_pagination_controls(summary_message)
             else:
                 logger.info("Will create new messages on first check")
             
@@ -254,18 +294,6 @@ class DownloadMonitor:
         except Exception as e:
             logger.error(f"Error during message cleanup: {e}")
             
-    async def add_pagination_controls(self, message):
-        """Add reaction controls for pagination to the message."""
-        for emoji in REACTION_CONTROLS:
-            try:
-                await message.add_reaction(emoji)
-                await asyncio.sleep(0.5)  # Avoid rate limits
-            except discord.Forbidden:
-                logger.error("Missing permissions to add reactions.")
-                return
-            except Exception as e:
-                logger.error(f"Error adding reaction {emoji}: {e}")
-
     async def update_summary_message(self, channel, embed):
         """Update the summary message or create it if it doesn't exist."""
         try:
@@ -282,7 +310,7 @@ class DownloadMonitor:
         if self.summary_message_id:
             try:
                 message = await channel.fetch_message(self.summary_message_id)
-                await message.edit(embed=embed)
+                await message.edit(embed=embed, view=self.pagination_view)
                 logger.info(f"Updated summary message: {self.summary_message_id}")
                 return
             except discord.NotFound:
@@ -305,10 +333,9 @@ class DownloadMonitor:
                     self.health_message_id = health_message.id
                 
                 # Create summary message
-                new_message = await channel.send(embed=embed)
+                new_message = await channel.send(embed=embed, view=self.pagination_view)
                 self.summary_message_id = new_message.id
                 logger.info(f"Created new summary message: {self.summary_message_id}")
-                await self.add_pagination_controls(new_message)
             except discord.Forbidden:
                 logger.error("No permission to send messages in the channel.")
             except Exception as e:
@@ -349,9 +376,8 @@ class DownloadMonitor:
                         
                         # Re-send summary message to move it below health message
                         await summary_message.delete()
-                        new_summary = await channel.send(embed=summary_embed)
+                        new_summary = await channel.send(embed=summary_embed, view=self.pagination_view)
                         self.summary_message_id = new_summary.id
-                        await self.add_pagination_controls(new_summary)
                         
                     except Exception as e:
                         logger.error(f"Failed to reorder messages: {e}")

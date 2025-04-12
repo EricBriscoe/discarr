@@ -23,7 +23,6 @@ class DiscordClient:
         intents = discord.Intents.default()
         intents.message_content = True
         intents.messages = True
-        intents.reactions = True
         
         # Create bot with command prefix and intents
         self.bot = commands.Bot(command_prefix='!', intents=intents)
@@ -72,28 +71,6 @@ class DiscordClient:
                 asyncio.create_task(self.initialize_monitor())
             else:
                 logger.info("Download monitor already initialized or initialization scheduled.")
-            
-        @self.bot.event
-        async def on_reaction_add(reaction, user):
-            """Handle pagination reactions."""
-            if not self.download_monitor or user == self.bot.user:
-                return
-                
-            if reaction.message.id != self.download_monitor.summary_message_id:
-                return
-                
-            # Process the reaction
-            if self.download_monitor.handle_reaction(reaction.emoji):
-                # If state changed, update the display
-                await self.download_monitor.check_downloads()
-            
-            # Remove the user's reaction
-            try:
-                await reaction.remove(user)
-            except discord.Forbidden:
-                logger.warning("Missing permissions to remove reactions.")
-            except Exception as e:
-                logger.error(f"Error removing reaction: {e}")
     
     async def initialize_monitor(self):
         """Initializes and starts the DownloadMonitor."""
@@ -103,6 +80,10 @@ class DiscordClient:
             
         logger.info("Initializing DownloadMonitor...")
         self.download_monitor = DownloadMonitor(self.bot, config.DISCORD_CHANNEL_ID)
+        
+        # Register the persistent view for our buttons
+        self.bot.add_view(self.download_monitor.pagination_view)
+        
         await self.download_monitor.start()
         logger.info("DownloadMonitor started.")
 

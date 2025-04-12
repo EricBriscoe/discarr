@@ -4,13 +4,25 @@ Handles state and controls for navigating pages of download information.
 """
 import math
 
-# Reaction controls for pagination
-FIRST_PAGE = "⏮️"
-PREV_PAGE = "◀️"
-NEXT_PAGE = "▶️"
-LAST_PAGE = "⏭️"
-# Remove movie and TV focus controls
-REACTION_CONTROLS = [FIRST_PAGE, PREV_PAGE, NEXT_PAGE, LAST_PAGE]
+# Button control IDs for pagination
+FIRST_PAGE_ID = "pagination_first"
+PREV_PAGE_ID = "pagination_prev"
+NEXT_PAGE_ID = "pagination_next"
+LAST_PAGE_ID = "pagination_last"
+
+# Button labels and emojis
+FIRST_PAGE_EMOJI = "⏮️"
+PREV_PAGE_EMOJI = "◀️"
+NEXT_PAGE_EMOJI = "▶️"
+LAST_PAGE_EMOJI = "⏭️"
+
+# Button definitions for view creation
+BUTTON_CONTROLS = [
+    {"id": FIRST_PAGE_ID, "emoji": FIRST_PAGE_EMOJI, "style": "secondary"},
+    {"id": PREV_PAGE_ID, "emoji": PREV_PAGE_EMOJI, "style": "primary"},
+    {"id": NEXT_PAGE_ID, "emoji": NEXT_PAGE_EMOJI, "style": "primary"},
+    {"id": LAST_PAGE_ID, "emoji": LAST_PAGE_EMOJI, "style": "secondary"}
+]
 
 class PaginationManager:
     """Manages pagination state for movies and TV shows."""
@@ -24,20 +36,20 @@ class PaginationManager:
         self.last_movie_page = 1
         self.last_tv_page = 1
     
-    def handle_reaction(self, reaction_emoji):
-        """Handle a pagination reaction and update the state.
+    def handle_button(self, button_id):
+        """Handle a pagination button click and update the state.
         
         Returns True if state was changed, False otherwise.
         """
         changed = False
         
-        if reaction_emoji == FIRST_PAGE:
+        if button_id == FIRST_PAGE_ID:
             if self.movie_current_page != 1 or self.tv_current_page != 1:
                 self.movie_current_page = 1
                 self.tv_current_page = 1
                 changed = True
                 
-        elif reaction_emoji == PREV_PAGE:
+        elif button_id == PREV_PAGE_ID:
             if self.movie_current_page > 1:
                 self.movie_current_page -= 1
                 changed = True
@@ -45,7 +57,7 @@ class PaginationManager:
                 self.tv_current_page -= 1
                 changed = True
                 
-        elif reaction_emoji == NEXT_PAGE:
+        elif button_id == NEXT_PAGE_ID:
             if self.movie_current_page < self.last_movie_page:
                 self.movie_current_page += 1
                 changed = True
@@ -53,7 +65,7 @@ class PaginationManager:
                 self.tv_current_page += 1
                 changed = True
                 
-        elif reaction_emoji == LAST_PAGE:
+        elif button_id == LAST_PAGE_ID:
             if self.movie_current_page != self.last_movie_page or self.tv_current_page != self.last_tv_page:
                 self.movie_current_page = self.last_movie_page
                 self.tv_current_page = self.last_tv_page
@@ -61,6 +73,19 @@ class PaginationManager:
                 
         return changed
         
+    # For backward compatibility
+    def handle_reaction(self, reaction_emoji):
+        """Legacy method for handling reactions - maps to button handling."""
+        if reaction_emoji == FIRST_PAGE_EMOJI:
+            return self.handle_button(FIRST_PAGE_ID)
+        elif reaction_emoji == PREV_PAGE_EMOJI:
+            return self.handle_button(PREV_PAGE_ID)
+        elif reaction_emoji == NEXT_PAGE_EMOJI:
+            return self.handle_button(NEXT_PAGE_ID)
+        elif reaction_emoji == LAST_PAGE_EMOJI:
+            return self.handle_button(LAST_PAGE_ID)
+        return False
+    
     def update_page_limits(self, movie_count, tv_count):
         """Update the last page numbers based on item counts."""
         self.update_movie_page_limit(movie_count)
