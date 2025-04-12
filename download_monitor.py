@@ -49,19 +49,34 @@ class PaginationView(discord.ui.View):
             
     async def button_callback(self, interaction):
         """Handle button press events."""
-        # Get the custom_id of the pressed button
-        button_id = interaction.data["custom_id"]
-        
-        # Update pagination state based on the button press
-        if self.download_monitor.pagination.handle_button(button_id):
-            # Acknowledge the interaction without sending a response
+        try:
+            # Get the custom_id of the pressed button
+            button_id = interaction.data["custom_id"]
+            
+            # Update pagination state based on the button press
+            state_changed = self.download_monitor.pagination.handle_button(button_id)
+            
+            # Always acknowledge the interaction first
             await interaction.response.defer(ephemeral=True)
             
-            # Update the display with the new pagination state
-            await self.download_monitor.check_downloads()
-        else:
-            # No state change (likely at first/last page already)
-            await interaction.response.defer(ephemeral=True)
+            # If state changed, update the display with the new pagination state
+            if state_changed:
+                # Create a task to update the display in the background
+                # This allows us to respond to the interaction quickly while the update happens
+                asyncio.create_task(self.download_monitor.check_downloads())
+                await interaction.followup.send("Updating display...", ephemeral=True)
+            else:
+                # No state change (likely at first/last page already)
+                await interaction.followup.send("You're already at the first/last page", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in button callback: {e}", exc_info=True)
+            # Try to respond if we haven't already
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer(ephemeral=True)
+                await interaction.followup.send("An error occurred while processing your request", ephemeral=True)
+            except:
+                pass  # At this point we can't do anything more with the interaction
 
 class DownloadMonitor:
     """Monitors downloads from Radarr and Sonarr and updates Discord."""
