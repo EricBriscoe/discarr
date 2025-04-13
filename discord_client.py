@@ -153,9 +153,6 @@ class DiscordClient:
             await interaction.followup.send("Processing cleanup request...", ephemeral=True)
             
             try:
-                # Create message to indicate we're working on it
-                await interaction.followup.send("Processing cleanup request...", ephemeral=True)
-                
                 # Get all queue items
                 radarr_items = self.download_monitor.radarr_client.get_queue_items()
                 logger.debug(f"Radarr queue items: {radarr_items}")
@@ -178,7 +175,7 @@ class DiscordClient:
                     sonarr_count = self.download_monitor.sonarr_client.remove_all_items()
                     removal_type = "all"
                 else:
-                    # Otherwise, only remove inactive items (original behavior)
+                    # Otherwise, only remove inactive items
                     radarr_count = self.download_monitor.radarr_client.remove_inactive_items()
                     sonarr_count = self.download_monitor.sonarr_client.remove_inactive_items()
                     removal_type = "inactive"
