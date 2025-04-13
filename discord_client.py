@@ -96,7 +96,8 @@ class DiscordClient:
                 await interaction.response.send_message("This command can only be used in the designated channel.", ephemeral=True)
                 return
 
-            await interaction.response.send_message("Manual check triggered...", ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Manual check triggered...", ephemeral=True)
             if self.download_monitor:
                 await self.download_monitor.check_downloads()
 
