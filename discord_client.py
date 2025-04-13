@@ -150,6 +150,7 @@ class DiscordClient:
                 
             # Always acknowledge the interaction immediately to avoid timeout
             await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("Processing cleanup request...", ephemeral=True)
             
             try:
                 # Create message to indicate we're working on it
