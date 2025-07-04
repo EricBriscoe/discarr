@@ -68,9 +68,25 @@ class TestDownloadMonitorCleanup:
         await download_monitor._cleanup_previous_messages()
         
         # Verify
-        mock_channel.purge.assert_called_once_with(limit=100, check=download_monitor._cleanup_previous_messages.__code__.co_consts[1])
-        # Note: The check function is a nested function, so we verify it was called with the right parameters
-        assert mock_channel.purge.call_args[1]['limit'] == 100
+        mock_channel.purge.assert_called_once()
+        call_args = mock_channel.purge.call_args
+        assert call_args[1]['limit'] == 100
+        assert callable(call_args[1]['check'])  # Verify check is a function
+        
+        # Test the check function behavior
+        check_function = call_args[1]['check']
+        
+        # Create test messages
+        bot_message = MagicMock()
+        bot_message.author = mock_bot.user
+        
+        user_message = MagicMock()
+        user_message.author = MagicMock()
+        user_message.author.id = 99999  # Different from bot
+        
+        # Verify the check function works correctly
+        assert check_function(bot_message) is True
+        assert check_function(user_message) is False
     
     @pytest.mark.asyncio
     async def test_cleanup_previous_messages_no_channel(self, download_monitor):
