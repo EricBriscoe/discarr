@@ -58,6 +58,7 @@ Unit tests focus on testing individual components in isolation:
 - **Settings Tests** (`test_settings.py`): Test configuration loading, validation, and environment variable handling
 - **Time Utils Tests** (`test_time_utils.py`): Test time formatting, parsing, and Discord timestamp functions
 - **Base Client Tests** (`test_base_client.py`): Test the base media client functionality, HTTP requests, and error handling
+- **Discord Bot Import Tests** (`test_discord_bot_imports.py`): Test critical Discord.py library imports and verify no naming conflicts (essential for Docker deployment)
 
 ### Integration Tests
 

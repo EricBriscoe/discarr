@@ -9,9 +9,9 @@ import asyncio
 import signal
 import sys
 
-from .commands.admin import AdminCommands
-from .commands.user import UserCommands
-from ..monitoring.download_monitor import DownloadMonitor
+from discord_bot.commands.admin import AdminCommands
+from discord_bot.commands.user import UserCommands
+from monitoring.download_monitor import DownloadMonitor
 
 logger = logging.getLogger(__name__)
 

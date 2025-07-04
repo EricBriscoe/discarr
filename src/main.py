@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.settings import settings
-from discord.bot import DiscordBot
+from discord_bot.bot import DiscordBot
 
 
 def parse_arguments():
