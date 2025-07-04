@@ -18,11 +18,11 @@ class TestHealthChecker:
     def mock_config(self):
         """Create a mock configuration object."""
         config = Mock()
-        config.RADARR_API_KEY = "test_radarr_key"
-        config.RADARR_URL = "http://localhost:7878"
-        config.SONARR_API_KEY = "test_sonarr_key"
-        config.SONARR_URL = "http://localhost:8989"
-        config.PLEX_URL = "http://localhost:32400"
+        config.radarr_api_key = "test_radarr_key"
+        config.radarr_url = "http://localhost:7878"
+        config.sonarr_api_key = "test_sonarr_key"
+        config.sonarr_url = "http://localhost:8989"
+        config.plex_url = "http://localhost:32400"
         return config
     
     @pytest.fixture
@@ -98,7 +98,7 @@ class TestHealthChecker:
     
     def test_check_radarr_health_disabled(self, health_checker):
         """Test Radarr health check when API key is not configured."""
-        health_checker.config.RADARR_API_KEY = None
+        health_checker.config.radarr_api_key = None
         
         result = health_checker.check_radarr_health()
         
@@ -161,7 +161,7 @@ class TestHealthChecker:
     
     def test_check_sonarr_health_disabled(self, health_checker):
         """Test Sonarr health check when API key is not configured."""
-        health_checker.config.SONARR_API_KEY = ""
+        health_checker.config.sonarr_api_key = ""
         
         result = health_checker.check_sonarr_health()
         
@@ -242,7 +242,7 @@ class TestHealthChecker:
     
     def test_check_plex_health_disabled(self, health_checker):
         """Test Plex health check when URL is not configured."""
-        health_checker.config.PLEX_URL = None
+        health_checker.config.plex_url = None
         
         result = health_checker.check_plex_health()
         
