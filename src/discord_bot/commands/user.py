@@ -4,6 +4,7 @@ Commands that regular users can execute.
 """
 import logging
 import discord
+from utils.interaction_utils import safe_defer_interaction, safe_send_response, handle_interaction_error
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +29,24 @@ class UserCommands:
         """
         # Verify command is used in the correct channel
         if interaction.channel_id != self.settings.discord_channel_id:
-            await interaction.response.send_message(
-                "This command can only be used in the designated channel.", 
+            await safe_send_response(
+                interaction,
+                content="This command can only be used in the designated channel.",
                 ephemeral=True
             )
             return
 
-        # Defer the response and trigger manual check
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send("Manual check triggered...", ephemeral=True)
+        # Safely defer the interaction to avoid timeout
+        defer_success = await safe_defer_interaction(interaction, ephemeral=True)
+        if not defer_success:
+            await handle_interaction_error(
+                interaction,
+                "Failed to process command due to interaction timeout. Please try again."
+            )
+            return
+
+        # Send confirmation and trigger manual check
+        await safe_send_response(interaction, content="Manual check triggered...", ephemeral=True)
         
         if download_monitor:
             await download_monitor.check_downloads()
