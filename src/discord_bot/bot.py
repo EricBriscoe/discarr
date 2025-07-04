@@ -102,6 +102,10 @@ class DiscordBot:
         async def check_slash(interaction: discord.Interaction):
             await user_commands.check_command(interaction, self.download_monitor)
 
+        @self.bot.tree.command(name="health", description="Check server health status")
+        async def health_slash(interaction: discord.Interaction):
+            await user_commands.health_command(interaction, self.download_monitor)
+
         # Register admin commands
         @self.bot.tree.command(name="verbose", description="Toggle verbose logging (admin only)")
         async def verbose_slash(interaction: discord.Interaction):

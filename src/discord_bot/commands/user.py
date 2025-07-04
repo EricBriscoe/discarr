@@ -50,3 +50,34 @@ class UserCommands:
         
         if download_monitor:
             await download_monitor.check_downloads()
+    
+    async def health_command(self, interaction: discord.Interaction, download_monitor):
+        """Handle the /health command to manually check server health status.
+        
+        Args:
+            interaction: Discord interaction object
+            download_monitor: DownloadMonitor instance
+        """
+        # Verify command is used in the correct channel
+        if interaction.channel_id != self.settings.discord_channel_id:
+            await safe_send_response(
+                interaction,
+                content="This command can only be used in the designated channel.",
+                ephemeral=True
+            )
+            return
+
+        # Safely defer the interaction to avoid timeout
+        defer_success = await safe_defer_interaction(interaction, ephemeral=True)
+        if not defer_success:
+            await handle_interaction_error(
+                interaction,
+                "Failed to process command due to interaction timeout. Please try again."
+            )
+            return
+
+        # Send confirmation and trigger manual health check
+        await safe_send_response(interaction, content="Manual health check triggered...", ephemeral=True)
+        
+        if download_monitor:
+            await download_monitor.check_health()
