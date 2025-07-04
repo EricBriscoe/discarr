@@ -4,8 +4,13 @@ Unit tests for the CacheManager class.
 import pytest
 import threading
 import time
+import os
 from unittest.mock import Mock, patch, MagicMock
 from concurrent.futures import Future, TimeoutError
+
+# Set required environment variables for testing
+os.environ['DISCORD_TOKEN'] = 'test_token'
+os.environ['DISCORD_CHANNEL_ID'] = '123456789'
 
 from src.monitoring.cache_manager import CacheManager
 

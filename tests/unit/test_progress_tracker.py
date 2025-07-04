@@ -3,34 +3,32 @@ Unit tests for the ProgressTracker class.
 """
 import pytest
 import time
+import os
 from unittest.mock import Mock, patch
 
-# Mock config module before importing ProgressTracker
-with patch.dict('sys.modules', {'config': Mock()}):
-    from src.monitoring.progress_tracker import ProgressTracker
+# Set required environment variables for testing
+os.environ['DISCORD_TOKEN'] = 'test_token'
+os.environ['DISCORD_CHANNEL_ID'] = '123456789'
+
+from src.monitoring.progress_tracker import ProgressTracker
 
 
 class TestProgressTracker:
     """Test cases for ProgressTracker class."""
     
     @pytest.fixture
-    def mock_config(self):
-        """Mock the config module."""
-        with patch('src.monitoring.progress_tracker.config') as mock_config:
-            mock_config.VERBOSE = False
-            yield mock_config
-    
-    @pytest.fixture
-    def progress_tracker(self, mock_config):
+    def progress_tracker(self):
         """Create a ProgressTracker instance."""
-        tracker = ProgressTracker()
-        # Manually set the attributes to known values
-        tracker.stuck_threshold_minutes = 120
-        tracker.min_progress_change = 1.0
-        tracker.min_size_change = 104857600
-        tracker.progress_history_hours = 4
-        tracker.max_snapshots_per_download = 50
-        return tracker
+        with patch('src.monitoring.progress_tracker.settings') as mock_settings:
+            mock_settings.stuck_threshold_minutes = 120
+            mock_settings.min_progress_change = 1.0
+            mock_settings.min_size_change = 104857600
+            mock_settings.progress_history_hours = 4
+            mock_settings.max_snapshots_per_download = 50
+            mock_settings.verbose = False
+            
+            tracker = ProgressTracker()
+            return tracker
     
     @pytest.fixture
     def sample_download_items(self):
@@ -215,6 +213,8 @@ class TestProgressTracker:
         assert stats['total_snapshots'] == 0
         assert stats['avg_snapshots_per_download'] == 0
         assert stats['memory_usage_estimate_kb'] == 0
+        assert stats['min_download_speed_mbps'] == 0
+        assert stats['max_download_speed_mbps'] == 0
     
     def test_get_statistics_with_data(self, progress_tracker, sample_download_items):
         """Test getting statistics with data."""
@@ -241,6 +241,10 @@ class TestProgressTracker:
         assert stats['total_snapshots'] >= 1
         assert stats['avg_snapshots_per_download'] >= 0
         assert stats['memory_usage_estimate_kb'] >= 0
+        assert 'min_download_speed_mbps' in stats
+        assert 'max_download_speed_mbps' in stats
+        assert stats['min_download_speed_mbps'] >= 0
+        assert stats['max_download_speed_mbps'] >= 0
     
     def test_cleanup_inactive_downloads(self, progress_tracker, sample_download_items):
         """Test cleanup of inactive downloads."""
@@ -329,3 +333,95 @@ class TestProgressTracker:
         
         # Should complete without errors
         assert len(progress_tracker.progress_history) > 0
+    
+    def test_calculate_download_speeds(self, progress_tracker):
+        """Test download speed calculation functionality."""
+        # Create download items with progress over time
+        items = [
+            {
+                'id': 1,
+                'title': 'Speed Test Movie',
+                'sizeleft': 1000000000,  # 1GB remaining
+                'size': 2000000000,      # 2GB total
+                'status': 'downloading',
+                'progress': 50.0
+            }
+        ]
+        
+        # Record initial snapshot
+        progress_tracker.record_progress_snapshot(items, 'radarr')
+        time.sleep(0.1)  # Wait 100ms
+        
+        # Simulate download progress (200MB downloaded in 100ms = ~2GB/s)
+        items[0]['sizeleft'] = 800000000  # 200MB less remaining
+        items[0]['progress'] = 60.0
+        progress_tracker.record_progress_snapshot(items, 'radarr')
+        
+        # Calculate speeds
+        speeds = progress_tracker._calculate_download_speeds()
+        
+        # Should have calculated at least one speed
+        assert len(speeds) >= 1
+        # Speed should be positive
+        assert all(speed > 0 for speed in speeds)
+        # Speed should be reasonable (around 2000 MB/s for our test data)
+        # Allow for timing variations in test environment
+        assert any(speed > 100 for speed in speeds)  # At least 100 MB/s
+    
+    def test_calculate_download_speeds_no_progress(self, progress_tracker):
+        """Test download speed calculation with no progress."""
+        # Create download items with no progress
+        items = [
+            {
+                'id': 1,
+                'title': 'Stuck Movie',
+                'sizeleft': 1000000000,  # Same size
+                'size': 2000000000,
+                'status': 'downloading',
+                'progress': 50.0
+            }
+        ]
+        
+        # Record multiple snapshots with no progress
+        for i in range(3):
+            progress_tracker.record_progress_snapshot(items, 'radarr')
+            time.sleep(0.01)
+        
+        # Calculate speeds
+        speeds = progress_tracker._calculate_download_speeds()
+        
+        # Should have no speeds since no progress was made
+        assert len(speeds) == 0
+    
+    def test_get_statistics_with_download_speeds(self, progress_tracker):
+        """Test statistics include download speeds when available."""
+        # Create download items with measurable progress
+        items = [
+            {
+                'id': 1,
+                'title': 'Fast Download',
+                'sizeleft': 1000000000,  # 1GB remaining
+                'size': 2000000000,      # 2GB total
+                'status': 'downloading',
+                'progress': 50.0
+            }
+        ]
+        
+        # Record initial snapshot
+        progress_tracker.record_progress_snapshot(items, 'radarr')
+        time.sleep(0.05)  # Wait 50ms
+        
+        # Simulate significant progress
+        items[0]['sizeleft'] = 500000000  # 500MB downloaded
+        items[0]['progress'] = 75.0
+        progress_tracker.record_progress_snapshot(items, 'radarr')
+        
+        # Get statistics
+        stats = progress_tracker.get_statistics()
+        
+        # Should have speed data
+        assert stats['min_download_speed_mbps'] >= 0
+        assert stats['max_download_speed_mbps'] >= 0
+        # If we have actual progress, max should be greater than min
+        if stats['max_download_speed_mbps'] > 0:
+            assert stats['max_download_speed_mbps'] >= stats['min_download_speed_mbps']
