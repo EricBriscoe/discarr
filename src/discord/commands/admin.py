@@ -224,26 +224,26 @@ class AdminCommands:
             )
             
             # Add analysis results
+            min_speed = progress_stats.get('min_download_speed_mbps', 0)
+            max_speed = progress_stats.get('max_download_speed_mbps', 0)
+            speed_info = f"{min_speed:.1f} - {max_speed:.1f} MB/s" if max_speed > 0 else "No active downloads"
+            
             embed.add_field(
                 name="📊 Analysis Results",
                 value=f"• {progress_stats.get('total_downloads', 0)} downloads tracked\n"
                       f"• {len(stuck_downloads)} stuck downloads identified\n"
-                      f"• Memory usage: {progress_stats.get('memory_usage_estimate_kb', 0):.1f} KB",
+                      f"• Download speeds: {speed_info}",
                 inline=False
             )
             
-            # Add removal results
-            total_stuck = radarr_stuck_count + sonarr_stuck_count
-            total_inactive = radarr_inactive_count + sonarr_inactive_count
+            # Add removal results (combined counts)
+            total_radarr_removed = radarr_stuck_count + radarr_inactive_count
+            total_sonarr_removed = sonarr_stuck_count + sonarr_inactive_count
             
             embed.add_field(
                 name="🗑️ Removed Items",
-                value=f"**Stuck Downloads:** {total_stuck}\n"
-                      f"• Radarr: {radarr_stuck_count}\n"
-                      f"• Sonarr: {sonarr_stuck_count}\n\n"
-                      f"**Inactive Items:** {total_inactive}\n"
-                      f"• Radarr: {radarr_inactive_count}\n"
-                      f"• Sonarr: {sonarr_inactive_count}",
+                value=f"• Radarr: {total_radarr_removed}\n"
+                      f"• Sonarr: {total_sonarr_removed}",
                 inline=False
             )
             
@@ -264,6 +264,9 @@ class AdminCommands:
                 )
             
             # Set color based on results
+            total_stuck = radarr_stuck_count + sonarr_stuck_count
+            total_inactive = radarr_inactive_count + sonarr_inactive_count
+            
             if total_stuck > 0:
                 embed.color = discord.Color.orange()  # Orange if stuck downloads were found
             elif total_inactive > 0:

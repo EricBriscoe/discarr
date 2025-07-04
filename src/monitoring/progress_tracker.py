@@ -6,7 +6,7 @@ import time
 import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional
-import config
+from ..core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,12 @@ class ProgressTracker:
         # Dictionary mapping download_id to list of ProgressSnapshots
         self.progress_history: Dict[str, List[ProgressSnapshot]] = {}
         
-        # Configuration with sensible defaults
-        self.stuck_threshold_minutes = getattr(config, 'STUCK_THRESHOLD_MINUTES', 120)  # 2 hours
-        self.min_progress_change = getattr(config, 'MIN_PROGRESS_CHANGE', 1.0)  # 1%
-        self.min_size_change = getattr(config, 'MIN_SIZE_CHANGE', 104857600)  # 100MB
-        self.progress_history_hours = getattr(config, 'PROGRESS_HISTORY_HOURS', 4)  # 4 hours
-        self.max_snapshots_per_download = getattr(config, 'MAX_SNAPSHOTS_PER_DOWNLOAD', 50)
+        # Configuration from settings
+        self.stuck_threshold_minutes = settings.stuck_threshold_minutes
+        self.min_progress_change = settings.min_progress_change
+        self.min_size_change = settings.min_size_change
+        self.progress_history_hours = settings.progress_history_hours
+        self.max_snapshots_per_download = settings.max_snapshots_per_download
         
         logger.info(f"ProgressTracker initialized with {self.stuck_threshold_minutes}min stuck threshold")
     
@@ -81,7 +81,7 @@ class ProgressTracker:
         # Clean up old snapshots beyond time window
         self._cleanup_old_snapshots(current_time)
         
-        if config.VERBOSE:
+        if settings.verbose:
             logger.debug(f"Recorded progress for {len(download_items)} {service_type} items. "
                         f"Total tracked downloads: {len(self.progress_history)}")
     
@@ -90,7 +90,7 @@ class ProgressTracker:
         inactive_ids = set(self.progress_history.keys()) - active_download_ids
         for download_id in inactive_ids:
             del self.progress_history[download_id]
-            if config.VERBOSE:
+            if settings.verbose:
                 logger.debug(f"Cleaned up progress history for inactive download: {download_id}")
     
     def _cleanup_old_snapshots(self, current_time: float):
@@ -124,7 +124,7 @@ class ProgressTracker:
             if stuck_info:
                 stuck_downloads.append(stuck_info)
         
-        if config.VERBOSE:
+        if settings.verbose:
             logger.debug(f"Found {len(stuck_downloads)} stuck downloads out of {len(self.progress_history)} tracked")
         
         return stuck_downloads
@@ -229,16 +229,59 @@ class ProgressTracker:
                 'total_downloads': 0,
                 'total_snapshots': 0,
                 'avg_snapshots_per_download': 0,
-                'memory_usage_estimate_kb': 0
+                'memory_usage_estimate_kb': 0,
+                'min_download_speed_mbps': 0,
+                'max_download_speed_mbps': 0
             }
         
         avg_snapshots = total_snapshots / total_downloads
         # Rough estimate: ~100 bytes per snapshot
         memory_estimate_kb = (total_snapshots * 100) / 1024
         
+        # Calculate download speeds
+        speeds = self._calculate_download_speeds()
+        min_speed = min(speeds) if speeds else 0
+        max_speed = max(speeds) if speeds else 0
+        
         return {
             'total_downloads': total_downloads,
             'total_snapshots': total_snapshots,
             'avg_snapshots_per_download': round(avg_snapshots, 1),
-            'memory_usage_estimate_kb': round(memory_estimate_kb, 1)
+            'memory_usage_estimate_kb': round(memory_estimate_kb, 1),
+            'min_download_speed_mbps': round(min_speed, 1),
+            'max_download_speed_mbps': round(max_speed, 1)
         }
+    
+    def _calculate_download_speeds(self) -> List[float]:
+        """Calculate download speeds for all tracked downloads.
+        
+        Returns:
+            List of download speeds in MB/s
+        """
+        speeds = []
+        
+        for download_id, snapshots in self.progress_history.items():
+            if len(snapshots) < 2:
+                continue
+            
+            # Calculate speed between consecutive snapshots
+            for i in range(1, len(snapshots)):
+                prev_snapshot = snapshots[i-1]
+                curr_snapshot = snapshots[i]
+                
+                # Calculate time difference in seconds
+                time_diff = curr_snapshot.timestamp - prev_snapshot.timestamp
+                if time_diff <= 0:
+                    continue
+                
+                # Calculate bytes downloaded (size_left decreased)
+                bytes_downloaded = prev_snapshot.size_left - curr_snapshot.size_left
+                if bytes_downloaded <= 0:
+                    continue
+                
+                # Convert to MB/s
+                speed_mbps = (bytes_downloaded / (1024 * 1024)) / time_diff
+                if speed_mbps > 0:
+                    speeds.append(speed_mbps)
+        
+        return speeds
