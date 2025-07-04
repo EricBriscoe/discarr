@@ -104,7 +104,7 @@ class DownloadMonitor:
         self._running = False
         
         # Stop background refresh
-        self.cache_manager.stop_background_refresh()
+        await self.cache_manager.stop_background_refresh()
         
         # Cancel the monitoring task
         if self._task:
@@ -121,6 +121,14 @@ class DownloadMonitor:
                 await self._health_task
             except asyncio.CancelledError:
                 pass
+        
+        # Close HTTP client sessions
+        try:
+            await self.radarr_client.close()
+            await self.sonarr_client.close()
+            logger.debug("Closed HTTP client sessions")
+        except Exception as e:
+            logger.error(f"Error closing HTTP client sessions: {e}")
         
         logger.info("DownloadMonitor stopped")
     

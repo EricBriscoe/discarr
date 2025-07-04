@@ -2,11 +2,9 @@
 Cache manager for Discarr bot.
 Handles background data fetching and caching of API results.
 """
-import threading
 import time
 import logging
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from src.monitoring.progress_tracker import ProgressTracker
 
@@ -28,43 +26,49 @@ class CacheManager:
         # Track loading state separately for each service
         self.radarr_loaded = False
         self.sonarr_loaded = False
-        self.executor = ThreadPoolExecutor(max_workers=2)
-        self._stop_event = threading.Event()
-        self._fetch_thread = None
+        self._refresh_task = None
+        self._running = False
         # Initialize progress tracker for stuck download detection
         self.progress_tracker = ProgressTracker()
     
     def start_background_refresh(self):
-        """Start background thread for periodic data refresh."""
-        if self._fetch_thread is None or not self._fetch_thread.is_alive():
-            self._stop_event.clear()
-            self._fetch_thread = threading.Thread(target=self._background_refresh_loop, daemon=True)
-            self._fetch_thread.start()
-            logger.info("Started background data refresh thread")
+        """Start background async task for periodic data refresh."""
+        if self._refresh_task is None or self._refresh_task.done():
+            self._running = True
+            self._refresh_task = asyncio.create_task(self._background_refresh_loop())
+            logger.info("Started background data refresh task")
     
-    def stop_background_refresh(self):
-        """Stop the background refresh thread."""
-        if self._fetch_thread and self._fetch_thread.is_alive():
-            self._stop_event.set()
-            self._fetch_thread.join(timeout=5)
-            logger.info("Stopped background data refresh thread")
+    async def stop_background_refresh(self):
+        """Stop the background refresh task."""
+        if self._refresh_task and not self._refresh_task.done():
+            self._running = False
+            self._refresh_task.cancel()
+            try:
+                await self._refresh_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Stopped background data refresh task")
     
-    def _background_refresh_loop(self):
-        """Background thread function that periodically refreshes data."""
-        while not self._stop_event.is_set():
-            self.refresh_data()
-            # Wait for the next refresh cycle or until stop is requested
-            self._stop_event.wait(self.refresh_interval)
+    async def _background_refresh_loop(self):
+        """Background async task that periodically refreshes data."""
+        try:
+            while self._running:
+                await self.refresh_data()
+                await asyncio.sleep(self.refresh_interval)
+        except asyncio.CancelledError:
+            logger.info("Background refresh loop cancelled")
+        except Exception as e:
+            logger.error(f"Error in background refresh loop: {e}", exc_info=True)
     
-    def refresh_data(self):
+    async def refresh_data(self):
         """Refresh data from Radarr and Sonarr using async clients."""
         current_time = time.time()
         if current_time - self.last_refresh < self.refresh_interval and self.radarr_loaded and self.sonarr_loaded:
             return
         
         try:
-            # Run async refresh in a new event loop
-            asyncio.run(self._async_refresh_data())
+            # Use the current event loop instead of creating a new one
+            await self._async_refresh_data()
             self.last_refresh = current_time
             # Ensure we have valid lists before getting length
             movie_count = len(self.movie_queue) if isinstance(self.movie_queue, list) else 0
@@ -82,18 +86,11 @@ class CacheManager:
     async def _refresh_radarr_data(self):
         """Refresh Radarr data independently."""
         try:
-            # Wrap the client call in executor with timeout to handle slow operations
+            # Call the async method directly with timeout
             movie_queue = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None, 
-                    self.radarr_client.get_queue_items
-                ),
+                self.radarr_client.get_queue_items(),
                 timeout=10.0
             )
-            
-            # If the result is a coroutine (shouldn't happen with executor), await it
-            if asyncio.iscoroutine(movie_queue):
-                movie_queue = await movie_queue
             
             # Process movie queue results
             if movie_queue is None:
@@ -106,9 +103,7 @@ class CacheManager:
                 self.progress_tracker.record_progress_snapshot(movie_queue, 'radarr')
                 # Get download updates asynchronously
                 try:
-                    update_result = self.radarr_client.get_download_updates()
-                    if asyncio.iscoroutine(update_result):
-                        await update_result
+                    await self.radarr_client.get_download_updates()
                 except Exception as e:
                     logger.error(f"Error getting Radarr download updates: {e}")
                 self.radarr_loaded = True
@@ -123,18 +118,11 @@ class CacheManager:
     async def _refresh_sonarr_data(self):
         """Refresh Sonarr data independently."""
         try:
-            # Wrap the client call in executor with timeout to handle slow operations
+            # Call the async method directly with timeout
             tv_queue = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None, 
-                    self.sonarr_client.get_queue_items
-                ),
+                self.sonarr_client.get_queue_items(),
                 timeout=10.0
             )
-            
-            # If the result is a coroutine (shouldn't happen with executor), await it
-            if asyncio.iscoroutine(tv_queue):
-                tv_queue = await tv_queue
             
             # Process TV queue results
             if tv_queue is None:
@@ -147,9 +135,7 @@ class CacheManager:
                 self.progress_tracker.record_progress_snapshot(tv_queue, 'sonarr')
                 # Get download updates asynchronously
                 try:
-                    update_result = self.sonarr_client.get_download_updates()
-                    if asyncio.iscoroutine(update_result):
-                        await update_result
+                    await self.sonarr_client.get_download_updates()
                 except Exception as e:
                     logger.error(f"Error getting Sonarr download updates: {e}")
                 self.sonarr_loaded = True
