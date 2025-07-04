@@ -195,17 +195,29 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
     # Return the embed object
     return embed
 
-def format_loading_message():
-    """Create a loading message embed."""
+def format_loading_message(loading_start_time=None):
+    """Create a loading message embed with optional stuck detection."""
     embed = discord.Embed(
         title="📊 Download Status",
         color=discord.Color.blue(),
         description="Loading download information from Radarr and Sonarr..."
     )
     
+    # Check if loading has been stuck for too long
+    stuck_warning = ""
+    if loading_start_time:
+        import time
+        elapsed_time = time.time() - loading_start_time
+        if elapsed_time > 120:  # 2 minutes
+            stuck_warning = "\n⚠️ **Loading is taking longer than expected. This may indicate:**\n" \
+                          "• Very large library (>1000 items)\n" \
+                          "• API connectivity issues\n" \
+                          "• Server performance problems"
+            embed.color = discord.Color.orange()
+    
     embed.add_field(
         name="🎬 Movies",
-        value="Loading movie data...\n⏳ Please wait, this may take a moment for large libraries.",
+        value=f"Loading movie data...\n⏳ Please wait, this may take a moment for large libraries.{stuck_warning}",
         inline=False
     )
     
@@ -215,7 +227,59 @@ def format_loading_message():
         inline=False
     )
     
-    # No need for navigation controls in footer
+    # Add timestamp
+    embed.timestamp = discord.utils.utcnow()
+    
+    return embed
+
+def format_error_message(radarr_error=None, sonarr_error=None):
+    """Create an error message embed when loading fails."""
+    embed = discord.Embed(
+        title="📊 Download Status",
+        color=discord.Color.red(),
+        description="❌ **Error loading download information**"
+    )
+    
+    if radarr_error:
+        embed.add_field(
+            name="🎬 Movies (Radarr)",
+            value=f"❌ **Error:** {radarr_error}\n\n**Possible solutions:**\n"
+                  "• Check Radarr server status\n"
+                  "• Verify API key and URL\n"
+                  "• Check network connectivity",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="🎬 Movies (Radarr)",
+            value="✅ **Status:** Connected",
+            inline=False
+        )
+    
+    if sonarr_error:
+        embed.add_field(
+            name="📺 TV Shows (Sonarr)",
+            value=f"❌ **Error:** {sonarr_error}\n\n**Possible solutions:**\n"
+                  "• Check Sonarr server status\n"
+                  "• Verify API key and URL\n"
+                  "• Check network connectivity",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="📺 TV Shows (Sonarr)",
+            value="✅ **Status:** Connected",
+            inline=False
+        )
+    
+    embed.add_field(
+        name="🔧 Troubleshooting",
+        value="• Check the health status message above\n"
+              "• Verify your .env configuration\n"
+              "• Check server logs for detailed errors\n"
+              "• Try restarting the bot if issues persist",
+        inline=False
+    )
     
     # Add timestamp
     embed.timestamp = discord.utils.utcnow()

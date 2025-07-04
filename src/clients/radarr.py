@@ -36,32 +36,59 @@ class RadarrClient(MediaClient):
         }
     
     async def get_queue_items(self) -> List[Dict]:
-        """Get all movies in the queue regardless of status."""
-        queue_data = await self._make_request('queue', params=self.get_queue_params())
-        if not queue_data:
+        """Get all movies in the queue regardless of status using pagination."""
+        # Progress callback for large libraries
+        def progress_callback(loaded_items, total_items, current_page):
+            if self.verbose:
+                logger.info(f"Radarr: Loaded {loaded_items}/{total_items} items (page {current_page})")
+        
+        # Get all records using pagination
+        try:
+            records = await asyncio.wait_for(
+                self.get_all_queue_items_paginated(progress_callback),
+                timeout=300.0  # 5 minute timeout for large libraries
+            )
+        except asyncio.TimeoutError:
+            logger.error("Timeout loading Radarr queue items - library may be too large")
             return []
         
-        items = []
-        records = queue_data.get("records", [])
+        if not records:
+            return []
         
         if self.verbose:
             logger.debug(f"Processing {len(records)} items from Radarr queue")
         
-        # Process items concurrently
-        tasks = []
-        for item in records:
-            tasks.append(self._process_queue_item(item))
+        # Process items in batches to avoid overwhelming the system
+        items = []
+        batch_size = 50  # Process 50 items at a time
         
-        # Execute all processing tasks concurrently
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"Error processing Radarr queue item: {result}")
-                continue
-            if result:
-                items.append(result)
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            
+            # Process batch concurrently with individual timeouts
+            tasks = []
+            for item in batch:
+                task = asyncio.wait_for(
+                    self._process_queue_item(item),
+                    timeout=10.0  # 10 second timeout per item
+                )
+                tasks.append(task)
+            
+            # Execute batch processing
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
                 
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error(f"Error processing Radarr queue item: {result}")
+                        continue
+                    if result:
+                        items.append(result)
+            except Exception as e:
+                logger.error(f"Error processing Radarr batch: {e}")
+                continue
+        
+        logger.info(f"Successfully processed {len(items)} Radarr queue items")
         return items
     
     async def _process_queue_item(self, item: Dict) -> Dict:

@@ -351,12 +351,10 @@ class TestCacheManager:
     
     def test_executor_timeout_handling(self, cache_manager, mock_radarr_client, mock_sonarr_client):
         """Test handling of executor timeouts."""
-        # Mock a slow response that times out
-        def slow_response():
-            time.sleep(15)  # Longer than the 10-second timeout
-            return []
+        from concurrent.futures import TimeoutError
         
-        mock_radarr_client.get_queue_items.side_effect = slow_response
+        # Mock a timeout exception instead of actually sleeping
+        mock_radarr_client.get_queue_items.side_effect = TimeoutError("Mocked timeout")
         
         # This should handle the timeout gracefully
         cache_manager.refresh_data()

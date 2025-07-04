@@ -104,12 +104,15 @@ class CacheManager:
         await self._refresh_sonarr_data()
     
     async def _refresh_radarr_data(self):
-        """Refresh Radarr data independently."""
+        """Refresh Radarr data independently with enhanced error handling."""
+        start_time = time.time()
         try:
-            # Call the async method directly with timeout
+            logger.info("Starting Radarr data refresh...")
+            
+            # Call the async method directly with extended timeout for large libraries
             movie_queue = await asyncio.wait_for(
                 self.radarr_client.get_queue_items(),
-                timeout=10.0
+                timeout=300.0  # 5 minute timeout for large libraries
             )
             
             # Process movie queue results
@@ -123,25 +126,39 @@ class CacheManager:
                 self.progress_tracker.record_progress_snapshot(movie_queue, 'radarr')
                 # Get download updates asynchronously
                 try:
-                    await self.radarr_client.get_download_updates()
+                    await asyncio.wait_for(
+                        self.radarr_client.get_download_updates(),
+                        timeout=30.0
+                    )
                 except Exception as e:
                     logger.error(f"Error getting Radarr download updates: {e}")
+                
                 self.radarr_loaded = True
-                logger.debug("Radarr data loaded successfully")
+                elapsed_time = time.time() - start_time
+                logger.info(f"Radarr data loaded successfully in {elapsed_time:.2f} seconds ({len(movie_queue)} items)")
             else:
                 logger.error(f"Invalid movie queue data type: {type(movie_queue)}")
+                self.radarr_loaded = False
                 
+        except asyncio.TimeoutError:
+            elapsed_time = time.time() - start_time
+            logger.error(f"Timeout refreshing Radarr data after {elapsed_time:.2f} seconds - library may be too large")
+            self.radarr_loaded = False
         except Exception as e:
-            logger.error(f"Error refreshing Radarr data: {e}")
+            elapsed_time = time.time() - start_time
+            logger.error(f"Error refreshing Radarr data after {elapsed_time:.2f} seconds: {e}")
             self.radarr_loaded = False
     
     async def _refresh_sonarr_data(self):
-        """Refresh Sonarr data independently."""
+        """Refresh Sonarr data independently with enhanced error handling."""
+        start_time = time.time()
         try:
-            # Call the async method directly with timeout
+            logger.info("Starting Sonarr data refresh...")
+            
+            # Call the async method directly with extended timeout for large libraries
             tv_queue = await asyncio.wait_for(
                 self.sonarr_client.get_queue_items(),
-                timeout=10.0
+                timeout=300.0  # 5 minute timeout for large libraries
             )
             
             # Process TV queue results
@@ -155,16 +172,27 @@ class CacheManager:
                 self.progress_tracker.record_progress_snapshot(tv_queue, 'sonarr')
                 # Get download updates asynchronously
                 try:
-                    await self.sonarr_client.get_download_updates()
+                    await asyncio.wait_for(
+                        self.sonarr_client.get_download_updates(),
+                        timeout=30.0
+                    )
                 except Exception as e:
                     logger.error(f"Error getting Sonarr download updates: {e}")
+                
                 self.sonarr_loaded = True
-                logger.debug("Sonarr data loaded successfully")
+                elapsed_time = time.time() - start_time
+                logger.info(f"Sonarr data loaded successfully in {elapsed_time:.2f} seconds ({len(tv_queue)} items)")
             else:
                 logger.error(f"Invalid TV queue data type: {type(tv_queue)}")
+                self.sonarr_loaded = False
                 
+        except asyncio.TimeoutError:
+            elapsed_time = time.time() - start_time
+            logger.error(f"Timeout refreshing Sonarr data after {elapsed_time:.2f} seconds - library may be too large")
+            self.sonarr_loaded = False
         except Exception as e:
-            logger.error(f"Error refreshing Sonarr data: {e}")
+            elapsed_time = time.time() - start_time
+            logger.error(f"Error refreshing Sonarr data after {elapsed_time:.2f} seconds: {e}")
             self.sonarr_loaded = False
     
     def _background_refresh_loop_sync(self):

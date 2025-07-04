@@ -8,7 +8,7 @@ import discord
 from datetime import datetime
 
 from src.discord_bot.ui.views import PaginationView
-from src.discord_bot.ui.formatters import format_summary_message, format_loading_message, format_partial_loading_message, format_health_status_message
+from src.discord_bot.ui.formatters import format_summary_message, format_loading_message, format_partial_loading_message, format_health_status_message, format_error_message
 from src.monitoring.cache_manager import CacheManager
 from src.monitoring.health_checker import HealthChecker
 from src.clients.radarr import RadarrClient
@@ -34,6 +34,8 @@ class DownloadMonitor:
         self.last_update = None
         self._running = False
         self._task = None
+        self.loading_start_time = None
+        self.last_error_state = {'radarr': None, 'sonarr': None}
         
         # Initialize clients
         self.radarr_client = RadarrClient(
@@ -170,7 +172,7 @@ class DownloadMonitor:
             logger.error(f"Error in monitor loop: {e}", exc_info=True)
     
     async def check_downloads(self):
-        """Check and update download status."""
+        """Check and update download status with enhanced error handling."""
         try:
             # Get current data from cache manager
             movie_downloads = self.cache_manager.get_movie_queue()
@@ -180,8 +182,24 @@ class DownloadMonitor:
             radarr_ready = self.cache_manager.is_radarr_ready()
             sonarr_ready = self.cache_manager.is_sonarr_ready()
             
-            # Create appropriate embed based on data availability
-            if radarr_ready and sonarr_ready:
+            # Track loading start time
+            if not radarr_ready or not sonarr_ready:
+                if self.loading_start_time is None:
+                    self.loading_start_time = time.time()
+            else:
+                # Reset loading start time when both services are ready
+                self.loading_start_time = None
+            
+            # Check for stuck loading (after 5 minutes, show error)
+            import time
+            if self.loading_start_time and (time.time() - self.loading_start_time) > 300:
+                # Show error message for stuck loading
+                radarr_error = None if radarr_ready else "Loading timeout - check server status and library size"
+                sonarr_error = None if sonarr_ready else "Loading timeout - check server status and library size"
+                
+                embed = format_error_message(radarr_error, sonarr_error)
+                logger.warning(f"Loading stuck for {time.time() - self.loading_start_time:.1f} seconds")
+            elif radarr_ready and sonarr_ready:
                 # Both services ready - show full data
                 embed = format_summary_message(
                     movie_downloads, 
@@ -200,8 +218,8 @@ class DownloadMonitor:
                     self.last_update
                 )
             else:
-                # No services ready - show loading message
-                embed = format_loading_message()
+                # No services ready - show loading message with stuck detection
+                embed = format_loading_message(self.loading_start_time)
             
             # Update or create the message
             await self._update_message(embed)
