@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 # Add src to path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from utils.time_utils import format_discord_timestamp, format_timedelta, parse_time_string, calculate_time_remaining
+from utils.time_utils import format_discord_timestamp, format_timedelta, parse_time_string, calculate_time_remaining, calculate_elapsed_time, format_elapsed_time
 
 
 class TestTimeUtils(unittest.TestCase):
