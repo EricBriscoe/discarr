@@ -4,7 +4,7 @@ Radarr API client for movie download monitoring.
 import logging
 from typing import Dict, List, Any
 from .base import MediaClient
-from ..utils.time_utils import format_discord_timestamp
+from utils.time_utils import format_discord_timestamp
 
 logger = logging.getLogger(__name__)
 

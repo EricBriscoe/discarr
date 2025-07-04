@@ -3,7 +3,7 @@ Base client class for media service APIs (Radarr, Sonarr, etc.).
 Provides common functionality and interface for all media clients.
 """
 import logging
-import requests
+import httpx
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
@@ -32,7 +32,7 @@ class MediaClient(ABC):
         self.api_key = api_key
         self.service_name = service_name
         self.verbose = verbose
-        self.session = requests.Session()
+        self.session = httpx.Client()
         self.session.headers.update({
             'X-Api-Key': self.api_key,
             'Content-Type': 'application/json'
@@ -71,7 +71,7 @@ class MediaClient(ABC):
                 logger.warning(f"{self.service_name} API returned status {response.status_code}: {response.text}")
                 return None
                 
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             logger.error(f"Error connecting to {self.service_name}: {e}")
             return None
         except Exception as e:

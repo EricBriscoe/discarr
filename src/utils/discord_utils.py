@@ -64,7 +64,7 @@ def calculate_time_remaining(item):
             return "unknown"
             
     except Exception as e:
-        if config.VERBOSE:
+        if hasattr(config, 'VERBOSE') and config.VERBOSE:
             logger.debug(f"Error calculating time remaining: {e}")
         return "unknown"
 
@@ -130,6 +130,6 @@ def format_discord_timestamp(iso_time_str, format_code="R"):
         # Return Discord's timestamp format
         return f"<t:{unix_timestamp}:{format_code}>"
     except Exception as e:
-        if config.VERBOSE:
+        if hasattr(config, 'VERBOSE') and config.VERBOSE:
             logger.warning(f"Error formatting Discord timestamp: {e}")
         return "∞"
