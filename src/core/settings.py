@@ -155,6 +155,11 @@ class Settings:
         """Maximum snapshots per download."""
         return int(os.getenv('MAX_SNAPSHOTS_PER_DOWNLOAD', 50))  # Default: 50 snapshots
     
+    @property
+    def cleanup_previous_messages(self) -> bool:
+        """Whether to clean up previous bot messages on startup."""
+        return os.getenv('CLEANUP_PREVIOUS_MESSAGES', 'true').lower() == 'true'
+    
     def log_config_status(self):
         """Log configuration status (excluding sensitive info)."""
         logger.info(f"Discord channel ID: {self.discord_channel_id}")
