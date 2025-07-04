@@ -4,9 +4,12 @@ Provides common functionality and interface for all media clients.
 """
 import logging
 import httpx
+import asyncio
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Set
 from datetime import datetime, timedelta
+from collections import defaultdict
+from weakref import WeakValueDictionary
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +35,49 @@ class MediaClient(ABC):
         self.api_key = api_key
         self.service_name = service_name
         self.verbose = verbose
-        self.session = httpx.Client()
-        self.session.headers.update({
-            'X-Api-Key': self.api_key,
-            'Content-Type': 'application/json'
-        })
         
-    def _make_request(self, endpoint: str, method: str = 'GET', params: Optional[Dict] = None, 
-                     data: Optional[Dict] = None) -> Optional[Dict]:
-        """Make an HTTP request to the API.
+        # Configure async client with connection pooling and optimization
+        limits = httpx.Limits(
+            max_keepalive_connections=20,
+            max_connections=100,
+            keepalive_expiry=30.0
+        )
+        
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=30.0,
+            write=10.0,
+            pool=5.0
+        )
+        
+        # Try to enable HTTP/2 if h2 package is available
+        try:
+            import h2
+            http2_enabled = True
+        except ImportError:
+            http2_enabled = False
+        
+        self.session = httpx.AsyncClient(
+            limits=limits,
+            timeout=timeout,
+            http2=http2_enabled,  # Enable HTTP/2 only if h2 package is available
+            headers={
+                'X-Api-Key': self.api_key,
+                'Content-Type': 'application/json',
+                'Accept-Encoding': 'gzip, deflate'  # Enable compression
+            }
+        )
+        
+        # Enhanced caching with TTL and weak references
+        self._cache = WeakValueDictionary()
+        self._cache_timestamps = {}
+        self._cache_ttl = 300  # 5 minutes TTL
+        self._request_semaphore = asyncio.Semaphore(10)  # Limit concurrent requests
+        self._pending_requests = {}  # Request deduplication
+        
+    async def _make_request(self, endpoint: str, method: str = 'GET', params: Optional[Dict] = None, 
+                           data: Optional[Dict] = None) -> Optional[Dict]:
+        """Make an async HTTP request to the API with request deduplication.
         
         Args:
             endpoint: API endpoint (without base URL)
@@ -53,39 +90,62 @@ class MediaClient(ABC):
         """
         url = f"{self.base_url}/api/v3/{endpoint}"
         
-        try:
+        # Create request key for deduplication
+        request_key = f"{method}:{url}:{str(params)}:{str(data)}"
+        
+        # Check if this request is already pending
+        if request_key in self._pending_requests:
             if self.verbose:
-                logger.debug(f"Making {method} request to {url}")
-                
-            response = self.session.request(
-                method=method,
-                url=url,
-                params=params,
-                json=data,
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.warning(f"{self.service_name} API returned status {response.status_code}: {response.text}")
-                return None
-                
-        except httpx.RequestError as e:
-            logger.error(f"Error connecting to {self.service_name}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error with {self.service_name} API: {e}")
-            return None
+                logger.debug(f"Deduplicating request to {url}")
+            return await self._pending_requests[request_key]
+        
+        # Create the request coroutine
+        request_coro = self._execute_request(url, method, params, data)
+        self._pending_requests[request_key] = request_coro
+        
+        try:
+            result = await request_coro
+            return result
+        finally:
+            # Clean up pending request
+            self._pending_requests.pop(request_key, None)
     
-    def test_connection(self) -> bool:
+    async def _execute_request(self, url: str, method: str, params: Optional[Dict], 
+                              data: Optional[Dict]) -> Optional[Dict]:
+        """Execute the actual HTTP request with rate limiting."""
+        async with self._request_semaphore:
+            try:
+                if self.verbose:
+                    logger.debug(f"Making {method} request to {url}")
+                    
+                response = await self.session.request(
+                    method=method,
+                    url=url,
+                    params=params,
+                    json=data
+                )
+                
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    logger.warning(f"{self.service_name} API returned status {response.status_code}: {response.text}")
+                    return None
+                    
+            except httpx.RequestError as e:
+                logger.error(f"Error connecting to {self.service_name}: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"Unexpected error with {self.service_name} API: {e}")
+                return None
+    
+    async def test_connection(self) -> bool:
         """Test connection to the API.
         
         Returns:
             True if connection is successful, False otherwise
         """
         try:
-            response = self._make_request('system/status')
+            response = await self._make_request('system/status')
             return response is not None
         except Exception as e:
             logger.error(f"Connection test failed for {self.service_name}: {e}")
@@ -132,7 +192,7 @@ class MediaClient(ABC):
         pass
     
     @abstractmethod
-    def get_queue_items(self) -> List[Dict]:
+    async def get_queue_items(self) -> List[Dict]:
         """Get queue items from the API.
         
         Returns:
@@ -141,7 +201,7 @@ class MediaClient(ABC):
         pass
     
     @abstractmethod
-    def get_media_info(self, queue_item: Dict) -> Dict:
+    async def get_media_info(self, queue_item: Dict) -> Dict:
         """Get media information for a queue item.
         
         Args:
@@ -152,21 +212,21 @@ class MediaClient(ABC):
         """
         pass
     
-    def get_queue(self) -> List[Dict]:
+    async def get_queue(self) -> List[Dict]:
         """Get formatted queue items.
         
         Returns:
             List of formatted queue items
         """
         try:
-            queue_items = self.get_queue_items()
+            queue_items = await self.get_queue_items()
             if not queue_items:
                 return []
             
             formatted_items = []
             for item in queue_items:
                 try:
-                    media_info = self.get_media_info(item)
+                    media_info = await self.get_media_info(item)
                     if media_info:
                         formatted_items.append(media_info)
                 except Exception as e:
@@ -179,43 +239,47 @@ class MediaClient(ABC):
             logger.error(f"Error getting {self.service_name} queue: {e}")
             return []
     
-    def get_active_downloads(self) -> List[Dict]:
+    async def get_active_downloads(self) -> List[Dict]:
         """Get only active downloads from the queue.
         
         Returns:
             List of active download items
         """
-        queue = self.get_queue()
+        queue = await self.get_queue()
         return [item for item in queue if item.get('status', '').lower() in ['downloading', 'queued']]
     
-    def get_download_updates(self) -> List[Dict]:
+    async def get_download_updates(self) -> List[Dict]:
         """Get download updates for progress tracking.
         
         Returns:
             List of download items with progress information
         """
-        return self.get_active_downloads()
+        return await self.get_active_downloads()
     
-    def remove_inactive_items(self) -> int:
+    async def remove_inactive_items(self) -> int:
         """Remove inactive items from the queue.
         
         Returns:
             Number of items removed
         """
         try:
-            queue_data = self._make_request('queue', params=self.get_queue_params())
+            queue_data = await self._make_request('queue', params=self.get_queue_params())
             if not queue_data or 'records' not in queue_data:
                 return 0
             
             inactive_statuses = ['failed', 'completed', 'warning']
-            removed_count = 0
+            removal_tasks = []
             
             for item in queue_data['records']:
                 status = item.get('status', '').lower()
                 if status in inactive_statuses:
                     item_id = item.get('id')
-                    if item_id and self._remove_queue_item(item_id):
-                        removed_count += 1
+                    if item_id:
+                        removal_tasks.append(self._remove_queue_item(item_id))
+            
+            # Execute removals concurrently
+            results = await asyncio.gather(*removal_tasks, return_exceptions=True)
+            removed_count = sum(1 for result in results if result is True)
             
             return removed_count
             
@@ -223,7 +287,7 @@ class MediaClient(ABC):
             logger.error(f"Error removing inactive {self.service_name} items: {e}")
             return 0
     
-    def remove_stuck_downloads(self, stuck_download_ids: List[str]) -> int:
+    async def remove_stuck_downloads(self, stuck_download_ids: List[str]) -> int:
         """Remove stuck downloads from the queue.
         
         Args:
@@ -232,33 +296,36 @@ class MediaClient(ABC):
         Returns:
             Number of items removed
         """
-        removed_count = 0
+        removal_tasks = [self._remove_queue_item(download_id) for download_id in stuck_download_ids]
         
-        for download_id in stuck_download_ids:
-            try:
-                if self._remove_queue_item(download_id):
-                    removed_count += 1
-            except Exception as e:
-                logger.error(f"Error removing stuck {self.service_name} download {download_id}: {e}")
-        
-        return removed_count
+        try:
+            results = await asyncio.gather(*removal_tasks, return_exceptions=True)
+            removed_count = sum(1 for result in results if result is True)
+            return removed_count
+        except Exception as e:
+            logger.error(f"Error removing stuck {self.service_name} downloads: {e}")
+            return 0
     
-    def remove_all_items(self) -> int:
+    async def remove_all_items(self) -> int:
         """Remove all items from the queue.
         
         Returns:
             Number of items removed
         """
         try:
-            queue_data = self._make_request('queue', params=self.get_queue_params())
+            queue_data = await self._make_request('queue', params=self.get_queue_params())
             if not queue_data or 'records' not in queue_data:
                 return 0
             
-            removed_count = 0
+            removal_tasks = []
             for item in queue_data['records']:
                 item_id = item.get('id')
-                if item_id and self._remove_queue_item(item_id):
-                    removed_count += 1
+                if item_id:
+                    removal_tasks.append(self._remove_queue_item(item_id))
+            
+            # Execute all removals concurrently
+            results = await asyncio.gather(*removal_tasks, return_exceptions=True)
+            removed_count = sum(1 for result in results if result is True)
             
             return removed_count
             
@@ -266,7 +333,7 @@ class MediaClient(ABC):
             logger.error(f"Error removing all {self.service_name} items: {e}")
             return 0
     
-    def _remove_queue_item(self, item_id: str) -> bool:
+    async def _remove_queue_item(self, item_id: str) -> bool:
         """Remove a specific item from the queue.
         
         Args:
@@ -276,8 +343,38 @@ class MediaClient(ABC):
             True if removal was successful, False otherwise
         """
         try:
-            response = self._make_request(f'queue/{item_id}', method='DELETE')
+            response = await self._make_request(f'queue/{item_id}', method='DELETE')
             return response is not None
         except Exception as e:
             logger.error(f"Error removing {self.service_name} queue item {item_id}: {e}")
             return False
+    
+    def _get_cache_key(self, endpoint: str, item_id: int) -> str:
+        """Generate cache key for an item."""
+        return f"{self.service_name}:{endpoint}:{item_id}"
+    
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check if cached item is still valid based on TTL."""
+        if cache_key not in self._cache_timestamps:
+            return False
+        
+        timestamp = self._cache_timestamps[cache_key]
+        return (datetime.now().timestamp() - timestamp) < self._cache_ttl
+    
+    def _cache_item(self, cache_key: str, item: Dict) -> None:
+        """Cache an item with timestamp."""
+        self._cache[cache_key] = item
+        self._cache_timestamps[cache_key] = datetime.now().timestamp()
+    
+    def _get_cached_item(self, cache_key: str) -> Optional[Dict]:
+        """Get item from cache if valid."""
+        if self._is_cache_valid(cache_key):
+            return self._cache.get(cache_key)
+        else:
+            # Clean up expired cache entry
+            self._cache_timestamps.pop(cache_key, None)
+            return None
+    
+    async def close(self):
+        """Close the HTTP client session."""
+        await self.session.aclose()

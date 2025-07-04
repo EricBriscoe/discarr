@@ -2,6 +2,7 @@
 Radarr API client for movie download monitoring.
 """
 import logging
+import asyncio
 from typing import Dict, List, Any
 from .base import MediaClient
 from src.utils.time_utils import format_discord_timestamp
@@ -34,9 +35,9 @@ class RadarrClient(MediaClient):
             "includeMovie": True
         }
     
-    def get_queue_items(self) -> List[Dict]:
+    async def get_queue_items(self) -> List[Dict]:
         """Get all movies in the queue regardless of status."""
-        queue_data = self._make_request('queue', params=self.get_queue_params())
+        queue_data = await self._make_request('queue', params=self.get_queue_params())
         if not queue_data:
             return []
         
@@ -46,18 +47,24 @@ class RadarrClient(MediaClient):
         if self.verbose:
             logger.debug(f"Processing {len(records)} items from Radarr queue")
         
+        # Process items concurrently
+        tasks = []
         for item in records:
-            try:
-                processed_item = self._process_queue_item(item)
-                if processed_item:
-                    items.append(processed_item)
-            except Exception as e:
-                logger.error(f"Error processing Radarr queue item: {e}")
+            tasks.append(self._process_queue_item(item))
+        
+        # Execute all processing tasks concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error processing Radarr queue item: {result}")
                 continue
+            if result:
+                items.append(result)
                 
         return items
     
-    def _process_queue_item(self, item: Dict) -> Dict:
+    async def _process_queue_item(self, item: Dict) -> Dict:
         """Process a single queue item into standardized format."""
         # Get basic status information
         item_id = item.get("id", 0)
@@ -65,7 +72,7 @@ class RadarrClient(MediaClient):
         tracked_status = item.get("trackedDownloadState", status)
         
         # Extract media-specific information
-        media_info = self.get_media_info(item)
+        media_info = await self.get_media_info(item)
         
         # Calculate progress
         progress = 0
@@ -101,13 +108,13 @@ class RadarrClient(MediaClient):
             "added": item.get("added", ""),
         }
     
-    def get_media_info(self, queue_item: Dict) -> Dict:
+    async def get_media_info(self, queue_item: Dict) -> Dict:
         """Extract movie specific information from the queue item."""
         movie_id = queue_item.get("movieId")
         movie_title = "Unknown Movie"
         
         if movie_id:
-            movie_data = self.get_movie_by_id(movie_id)
+            movie_data = await self.get_movie_by_id(movie_id)
             if movie_data:
                 movie_title = movie_data.get("title", movie_title)
         else:
@@ -120,21 +127,34 @@ class RadarrClient(MediaClient):
             "title": movie_title
         }
     
-    def get_movie_by_id(self, movie_id: int) -> Dict:
-        """Get movie details by ID with caching."""
+    async def get_movie_by_id(self, movie_id: int) -> Dict:
+        """Get movie details by ID with enhanced caching."""
+        cache_key = self._get_cache_key("movie", movie_id)
+        
+        # Check cache first
+        cached_item = self._get_cached_item(cache_key)
+        if cached_item:
+            return cached_item
+        
+        # Check legacy cache for backward compatibility
         if movie_id in self.movie_cache:
-            return self.movie_cache[movie_id]
+            movie_data = self.movie_cache[movie_id]
+            # Migrate to new cache
+            self._cache_item(cache_key, movie_data)
+            return movie_data
             
-        movie_data = self._make_request(f'movie/{movie_id}')
+        movie_data = await self._make_request(f'movie/{movie_id}')
         if movie_data:
+            # Cache in both old and new systems during transition
             self.movie_cache[movie_id] = movie_data
+            self._cache_item(cache_key, movie_data)
             return movie_data
         
         return {}
     
-    def get_download_updates(self) -> List[Dict]:
+    async def get_download_updates(self) -> List[Dict]:
         """Get updates for downloads that need to be reported to Discord."""
-        current_downloads = self.get_active_downloads()
+        current_downloads = await self.get_active_downloads()
         updates = []
         
         # Check for new downloads or progress updates

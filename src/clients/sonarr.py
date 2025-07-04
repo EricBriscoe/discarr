@@ -2,6 +2,7 @@
 Sonarr API client for TV show download monitoring.
 """
 import logging
+import asyncio
 from typing import Dict, List, Any
 from .base import MediaClient
 from src.utils.time_utils import format_discord_timestamp
@@ -36,9 +37,9 @@ class SonarrClient(MediaClient):
             "includeEpisode": True
         }
     
-    def get_queue_items(self) -> List[Dict]:
+    async def get_queue_items(self) -> List[Dict]:
         """Get all episodes in the queue regardless of status."""
-        queue_data = self._make_request('queue', params=self.get_queue_params())
+        queue_data = await self._make_request('queue', params=self.get_queue_params())
         if not queue_data:
             return []
         
@@ -48,18 +49,24 @@ class SonarrClient(MediaClient):
         if self.verbose:
             logger.debug(f"Processing {len(records)} items from Sonarr queue")
         
+        # Process items concurrently
+        tasks = []
         for item in records:
-            try:
-                processed_item = self._process_queue_item(item)
-                if processed_item:
-                    items.append(processed_item)
-            except Exception as e:
-                logger.error(f"Error processing Sonarr queue item: {e}")
+            tasks.append(self._process_queue_item(item))
+        
+        # Execute all processing tasks concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error processing Sonarr queue item: {result}")
                 continue
+            if result:
+                items.append(result)
                 
         return items
     
-    def _process_queue_item(self, item: Dict) -> Dict:
+    async def _process_queue_item(self, item: Dict) -> Dict:
         """Process a single queue item into standardized format."""
         # Get basic status information
         item_id = item.get("id", 0)
@@ -67,7 +74,7 @@ class SonarrClient(MediaClient):
         tracked_status = item.get("trackedDownloadState", status)
         
         # Extract media-specific information
-        media_info = self.get_media_info(item)
+        media_info = await self.get_media_info(item)
         
         # Calculate progress
         progress = 0
@@ -106,7 +113,7 @@ class SonarrClient(MediaClient):
             "added": item.get("added", ""),
         }
     
-    def get_media_info(self, queue_item: Dict) -> Dict:
+    async def get_media_info(self, queue_item: Dict) -> Dict:
         """Extract TV series specific information from the queue item."""
         # Extract IDs for series and episode
         series_id = queue_item.get("seriesId")
@@ -118,20 +125,31 @@ class SonarrClient(MediaClient):
         season_number = queue_item.get("seasonNumber", 0)
         episode_number = 0
         
-        # Get series details
+        # Fetch series and episode data concurrently
+        tasks = []
         if series_id:
-            series_data = self.get_series_by_id(series_id)
-            if series_data:
-                series_title = series_data.get("title", series_title)
-        
-        # Get episode details
+            tasks.append(self.get_series_by_id(series_id))
+        else:
+            tasks.append(asyncio.create_task(self._return_none()))
+            
         if episode_id:
-            episode_data = self.get_episode_by_id(episode_id)
-            if episode_data:
-                episode_title = episode_data.get("title", episode_title)
-                if not season_number and "seasonNumber" in episode_data:
-                    season_number = episode_data.get("seasonNumber", 0)
-                episode_number = episode_data.get("episodeNumber", 0)
+            tasks.append(self.get_episode_by_id(episode_id))
+        else:
+            tasks.append(asyncio.create_task(self._return_none()))
+        
+        # Execute both requests concurrently
+        series_data, episode_data = await asyncio.gather(*tasks)
+        
+        # Process series data
+        if series_data:
+            series_title = series_data.get("title", series_title)
+        
+        # Process episode data
+        if episode_data:
+            episode_title = episode_data.get("title", episode_title)
+            if not season_number and "seasonNumber" in episode_data:
+                season_number = episode_data.get("seasonNumber", 0)
+            episode_number = episode_data.get("episodeNumber", 0)
         
         if self.verbose:
             logger.debug(f"Queue item: {series_title} - S{season_number:02d}E{episode_number:02d} ({queue_item.get('trackedDownloadState', 'status not found')})")
@@ -143,33 +161,63 @@ class SonarrClient(MediaClient):
             "episode_number": episode_number
         }
     
-    def get_series_by_id(self, series_id: int) -> Dict:
-        """Get series details by ID with caching."""
+    async def _return_none(self) -> None:
+        """Helper method to return None asynchronously."""
+        return None
+    
+    async def get_series_by_id(self, series_id: int) -> Dict:
+        """Get series details by ID with enhanced caching."""
+        cache_key = self._get_cache_key("series", series_id)
+        
+        # Check cache first
+        cached_item = self._get_cached_item(cache_key)
+        if cached_item:
+            return cached_item
+        
+        # Check legacy cache for backward compatibility
         if series_id in self.series_cache:
-            return self.series_cache[series_id]
+            series_data = self.series_cache[series_id]
+            # Migrate to new cache
+            self._cache_item(cache_key, series_data)
+            return series_data
             
-        series_data = self._make_request(f'series/{series_id}')
+        series_data = await self._make_request(f'series/{series_id}')
         if series_data:
+            # Cache in both old and new systems during transition
             self.series_cache[series_id] = series_data
+            self._cache_item(cache_key, series_data)
             return series_data
         
         return {}
     
-    def get_episode_by_id(self, episode_id: int) -> Dict:
-        """Get episode details by ID with caching."""
+    async def get_episode_by_id(self, episode_id: int) -> Dict:
+        """Get episode details by ID with enhanced caching."""
+        cache_key = self._get_cache_key("episode", episode_id)
+        
+        # Check cache first
+        cached_item = self._get_cached_item(cache_key)
+        if cached_item:
+            return cached_item
+        
+        # Check legacy cache for backward compatibility
         if episode_id in self.episode_cache:
-            return self.episode_cache[episode_id]
+            episode_data = self.episode_cache[episode_id]
+            # Migrate to new cache
+            self._cache_item(cache_key, episode_data)
+            return episode_data
             
-        episode_data = self._make_request(f'episode/{episode_id}')
+        episode_data = await self._make_request(f'episode/{episode_id}')
         if episode_data:
+            # Cache in both old and new systems during transition
             self.episode_cache[episode_id] = episode_data
+            self._cache_item(cache_key, episode_data)
             return episode_data
         
         return {}
     
-    def get_download_updates(self) -> List[Dict]:
+    async def get_download_updates(self) -> List[Dict]:
         """Get updates for downloads that need to be reported to Discord."""
-        current_downloads = self.get_active_downloads()
+        current_downloads = await self.get_active_downloads()
         updates = []
         
         # Check for new downloads or progress updates
