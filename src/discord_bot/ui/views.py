@@ -4,7 +4,7 @@ Contains View classes for interactive components like pagination.
 """
 import discord
 from discord.ui import View, Button
-from discord_bot.ui.pagination import PaginationManager, FIRST_PAGE_ID, PREV_PAGE_ID, NEXT_PAGE_ID, LAST_PAGE_ID
+from src.discord_bot.ui.pagination import PaginationManager, FIRST_PAGE_ID, PREV_PAGE_ID, NEXT_PAGE_ID, LAST_PAGE_ID
 import logging
 
 logger = logging.getLogger(__name__)

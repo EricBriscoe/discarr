@@ -9,7 +9,7 @@ from datetime import datetime
 import discord
 import pytz
 
-from utils.discord_utils import format_discord_timestamp, get_status_emoji, truncate_title
+from src.utils.discord_utils import format_discord_timestamp, get_status_emoji, truncate_title
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ import time
 import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional
-from core.settings import settings
+from src.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
