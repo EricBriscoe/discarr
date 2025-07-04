@@ -52,7 +52,7 @@ class TestDownloadMonitorCleanup:
         with patch('src.monitoring.download_monitor.RadarrClient'), \
              patch('src.monitoring.download_monitor.SonarrClient'), \
              patch('src.monitoring.download_monitor.CacheManager'), \
-             patch('src.monitoring.download_monitor.PaginationView'):
+             patch('src.discord_bot.ui.views.PaginationView'):
             monitor = DownloadMonitor(mock_bot, mock_settings)
             return monitor
     
@@ -142,7 +142,7 @@ class TestDownloadMonitorCleanup:
         with patch('src.monitoring.download_monitor.RadarrClient'), \
              patch('src.monitoring.download_monitor.SonarrClient'), \
              patch('src.monitoring.download_monitor.CacheManager'), \
-             patch('src.monitoring.download_monitor.PaginationView'):
+             patch('src.discord_bot.ui.views.PaginationView'):
             monitor = DownloadMonitor(mock_bot, settings)
             monitor.channel = mock_channel
             monitor._cleanup_previous_messages = AsyncMock()

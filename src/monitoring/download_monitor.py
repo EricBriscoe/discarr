@@ -8,7 +8,6 @@ import time
 import discord
 from datetime import datetime
 
-from src.discord_bot.ui.views import PaginationView
 from src.discord_bot.ui.formatters import format_summary_message, format_loading_message, format_partial_loading_message, format_health_status_message, format_error_message
 from src.monitoring.cache_manager import CacheManager
 from src.monitoring.health_checker import HealthChecker
@@ -53,7 +52,8 @@ class DownloadMonitor:
         # Initialize cache manager
         self.cache_manager = CacheManager(self.radarr_client, self.sonarr_client)
         
-        # Initialize pagination view
+        # Initialize pagination view (import locally to avoid circular imports)
+        from src.discord_bot.ui.views import PaginationView
         self.pagination_view = PaginationView(download_monitor=self)
         
         # Initialize health checker
