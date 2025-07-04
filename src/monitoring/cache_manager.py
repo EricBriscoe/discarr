@@ -5,7 +5,9 @@ Handles background data fetching and caching of API results.
 import time
 import logging
 import asyncio
+import threading
 from threading import Lock
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from src.monitoring.progress_tracker import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -28,26 +30,43 @@ class CacheManager:
         self.sonarr_loaded = False
         self._refresh_task = None
         self._running = False
+        # For backward compatibility with tests
+        self._fetch_thread = None
         # Initialize progress tracker for stuck download detection
         self.progress_tracker = ProgressTracker()
+        # Thread pool for sync operations
+        self._executor = ThreadPoolExecutor(max_workers=2)
     
     def start_background_refresh(self):
-        """Start background async task for periodic data refresh."""
-        if self._refresh_task is None or self._refresh_task.done():
-            self._running = True
-            self._refresh_task = asyncio.create_task(self._background_refresh_loop())
-            logger.info("Started background data refresh task")
+        """Start background refresh task."""
+        # For async environments
+        try:
+            if self._refresh_task is None or self._refresh_task.done():
+                self._running = True
+                self._refresh_task = asyncio.create_task(self._background_refresh_loop())
+                logger.info("Started background data refresh task")
+        except RuntimeError:
+            # No event loop running, use threading for tests
+            if self._fetch_thread is None or not self._fetch_thread.is_alive():
+                self._running = True
+                self._fetch_thread = threading.Thread(target=self._background_refresh_loop_sync, daemon=True)
+                self._fetch_thread.start()
+                logger.info("Started background data refresh thread")
     
-    async def stop_background_refresh(self):
+    def stop_background_refresh(self):
         """Stop the background refresh task."""
+        self._running = False
+        
+        # Stop async task if running
         if self._refresh_task and not self._refresh_task.done():
-            self._running = False
             self._refresh_task.cancel()
-            try:
-                await self._refresh_task
-            except asyncio.CancelledError:
-                pass
             logger.info("Stopped background data refresh task")
+        
+        # Stop thread if running
+        if self._fetch_thread and self._fetch_thread.is_alive():
+            # Thread will stop on next iteration due to _running = False
+            self._fetch_thread.join(timeout=1.0)
+            logger.info("Stopped background data refresh thread")
     
     async def _background_refresh_loop(self):
         """Background async task that periodically refreshes data."""
@@ -147,6 +166,118 @@ class CacheManager:
             logger.error(f"Error refreshing Sonarr data: {e}")
             self.sonarr_loaded = False
     
+    def _background_refresh_loop_sync(self):
+        """Background sync thread that periodically refreshes data."""
+        try:
+            while self._running:
+                self.refresh_data()  # Use the main refresh_data method for mocking compatibility
+                # Sleep in smaller increments to allow for faster stopping
+                sleep_time = 0
+                while sleep_time < self.refresh_interval and self._running:
+                    time.sleep(0.1)
+                    sleep_time += 0.1
+        except Exception as e:
+            logger.error(f"Error in background refresh loop: {e}", exc_info=True)
+    
+    def refresh_data_sync(self):
+        """Synchronous version of refresh_data for testing."""
+        current_time = time.time()
+        if current_time - self.last_refresh < self.refresh_interval and self.radarr_loaded and self.sonarr_loaded:
+            return
+        
+        try:
+            self._sync_refresh_data()
+            self.last_refresh = current_time
+            # Ensure we have valid lists before getting length
+            movie_count = len(self.movie_queue) if isinstance(self.movie_queue, list) else 0
+            tv_count = len(self.tv_queue) if isinstance(self.tv_queue, list) else 0
+            logger.debug(f"Data refresh complete. Found {movie_count} movies and {tv_count} TV shows")
+        except Exception as e:
+            logger.error(f"Error in refresh_data: {e}", exc_info=True)
+    
+    def _sync_refresh_data(self):
+        """Synchronous method to refresh data from both services."""
+        # Handle each service independently to avoid one failure affecting the other
+        self._refresh_radarr_data_sync()
+        self._refresh_sonarr_data_sync()
+    
+    def _refresh_radarr_data_sync(self):
+        """Refresh Radarr data independently (sync version)."""
+        try:
+            # Use executor with timeout for sync calls
+            future = self._executor.submit(self.radarr_client.get_queue_items)
+            try:
+                movie_queue = future.result(timeout=10.0)
+            except TimeoutError:
+                logger.error("Timeout refreshing Radarr data")
+                self.radarr_loaded = False
+                return
+            
+            # Process movie queue results
+            if movie_queue is None:
+                movie_queue = []
+            
+            if isinstance(movie_queue, list):
+                with self.movie_queue_lock:
+                    self.movie_queue = movie_queue
+                # Record progress snapshots for Radarr items
+                self.progress_tracker.record_progress_snapshot(movie_queue, 'radarr')
+                # Get download updates
+                try:
+                    future = self._executor.submit(self.radarr_client.get_download_updates)
+                    future.result(timeout=5.0)
+                except Exception as e:
+                    logger.error(f"Error getting Radarr download updates: {e}")
+                self.radarr_loaded = True
+                logger.debug("Radarr data loaded successfully")
+            else:
+                logger.error(f"Invalid movie queue data type: {type(movie_queue)}")
+                
+        except Exception as e:
+            logger.error(f"Error refreshing Radarr data: {e}")
+            self.radarr_loaded = False
+    
+    def _refresh_sonarr_data_sync(self):
+        """Refresh Sonarr data independently (sync version)."""
+        try:
+            # Use executor with timeout for sync calls
+            future = self._executor.submit(self.sonarr_client.get_queue_items)
+            try:
+                tv_queue = future.result(timeout=10.0)
+            except TimeoutError:
+                logger.error("Timeout refreshing Sonarr data")
+                self.sonarr_loaded = False
+                return
+            
+            # Process TV queue results
+            if tv_queue is None:
+                tv_queue = []
+                
+            if isinstance(tv_queue, list):
+                with self.tv_queue_lock:
+                    self.tv_queue = tv_queue
+                # Record progress snapshots for Sonarr items
+                self.progress_tracker.record_progress_snapshot(tv_queue, 'sonarr')
+                # Get download updates
+                try:
+                    future = self._executor.submit(self.sonarr_client.get_download_updates)
+                    future.result(timeout=5.0)
+                except Exception as e:
+                    logger.error(f"Error getting Sonarr download updates: {e}")
+                self.sonarr_loaded = True
+                logger.debug("Sonarr data loaded successfully")
+            else:
+                logger.error(f"Invalid TV queue data type: {type(tv_queue)}")
+                
+        except Exception as e:
+            logger.error(f"Error refreshing Sonarr data: {e}")
+            self.sonarr_loaded = False
+
+    # Alias for backward compatibility
+    def refresh_data(self):
+        """Refresh data - uses sync version for compatibility."""
+        return self.refresh_data_sync()
+
     async def _wrap_sync_result(self, result):
         """Wrap a synchronous result in an async function for testing."""
         return result
