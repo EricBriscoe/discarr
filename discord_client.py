@@ -236,7 +236,6 @@ class DiscordClient:
                 
             # Always acknowledge the interaction immediately to avoid timeout
             await interaction.response.defer(ephemeral=True)
-            await interaction.followup.send("Analyzing downloads and processing cleanup request...", ephemeral=True)
             
             try:
                 # Check if download monitor is available
