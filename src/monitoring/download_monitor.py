@@ -88,6 +88,9 @@ class DownloadMonitor:
         # Start background data refresh
         self.cache_manager.start_background_refresh()
         
+        # Create initial health status message first to ensure proper ordering
+        await self._create_initial_health_message()
+        
         # Start the monitoring task
         self._task = asyncio.create_task(self._monitor_loop())
         
@@ -131,6 +134,29 @@ class DownloadMonitor:
             logger.error(f"Error closing HTTP client sessions: {e}")
         
         logger.info("DownloadMonitor stopped")
+    
+    async def _create_initial_health_message(self):
+        """Create the initial health status message to ensure proper ordering."""
+        try:
+            if not self.channel:
+                logger.error("No channel available for initial health message creation")
+                return
+            
+            # Update the last health update time
+            self.last_health_update = datetime.now()
+            
+            # Check health of all services
+            health_status = self.health_checker.check_all_services()
+            
+            # Format the health status embed
+            health_embed = format_health_status_message(health_status, self.last_health_update)
+            
+            # Create the initial health message
+            self.health_message = await self.channel.send(embed=health_embed)
+            logger.info("Created initial health status message")
+            
+        except Exception as e:
+            logger.error(f"Error creating initial health message: {e}", exc_info=True)
     
     async def _monitor_loop(self):
         """Main monitoring loop."""
@@ -328,13 +354,68 @@ class DownloadMonitor:
                     await self.health_message.edit(embed=embed)
                     logger.debug("Updated existing health status message")
                 except discord.NotFound:
-                    # Message was deleted, create a new one
-                    logger.warning("Previous health message was deleted, creating new one")
-                    self.health_message = await self.channel.send(embed=embed)
+                    # Message was deleted, need to recreate and ensure proper ordering
+                    logger.warning("Previous health message was deleted, recreating with proper ordering")
+                    await self._recreate_health_message_with_ordering(embed)
                 except discord.HTTPException as e:
                     logger.error(f"HTTP error updating health message: {e}")
-                    # Try to create a new message
-                    self.health_message = await self.channel.send(embed=embed)
+                    # Try to recreate with proper ordering
+                    await self._recreate_health_message_with_ordering(embed)
         
         except Exception as e:
             logger.error(f"Error updating health Discord message: {e}", exc_info=True)
+    
+    async def _recreate_health_message_with_ordering(self, embed):
+        """Recreate the health message ensuring it appears before the download message.
+        
+        Args:
+            embed: Discord embed to send
+        """
+        try:
+            # If we have a download message, we need to recreate both messages in the correct order
+            if self.message:
+                # Store the current download message embed
+                download_embed = None
+                try:
+                    # Get the current download message content
+                    download_message = await self.channel.fetch_message(self.message.id)
+                    if download_message.embeds:
+                        download_embed = download_message.embeds[0]
+                except (discord.NotFound, discord.HTTPException):
+                    # Download message doesn't exist or can't be fetched
+                    pass
+                
+                # Delete the old download message if it exists
+                try:
+                    await self.message.delete()
+                    logger.debug("Deleted old download message for reordering")
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+                
+                # Create health message first
+                self.health_message = await self.channel.send(embed=embed)
+                logger.info("Recreated health status message with proper ordering")
+                
+                # Recreate download message if we had one
+                if download_embed:
+                    self.message = await self.channel.send(
+                        embed=download_embed, 
+                        view=self.pagination_view
+                    )
+                    logger.info("Recreated download status message after health message")
+                else:
+                    # Reset message reference since we deleted it
+                    self.message = None
+            else:
+                # No download message exists, just create the health message
+                self.health_message = await self.channel.send(embed=embed)
+                logger.info("Created new health status message")
+                
+        except Exception as e:
+            logger.error(f"Error recreating health message with ordering: {e}", exc_info=True)
+            # Fallback: just create a new health message
+            try:
+                self.health_message = await self.channel.send(embed=embed)
+                logger.info("Created fallback health status message")
+            except Exception as fallback_error:
+                logger.error(f"Error creating fallback health message: {fallback_error}", exc_info=True)
