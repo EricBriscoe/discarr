@@ -199,7 +199,7 @@ Discarr is built with a modular architecture:
 ### Development Guidelines
 
 - Write tests for new features
-- Maintain code coverage above 80%
+- Maintain code coverage above 65%
 - Follow PEP 8 style guidelines
 - Update documentation for API changes
 
