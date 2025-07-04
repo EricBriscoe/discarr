@@ -4,7 +4,6 @@
 [![codecov](https://codecov.io/gh/EricBriscoe/discarr/branch/main/graph/badge.svg)](https://codecov.io/gh/EricBriscoe/discarr)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 A powerful Discord bot for monitoring and managing your Radarr and Sonarr instances. Discarr provides real-time notifications, download monitoring, and interactive management capabilities directly through Discord.
 
@@ -187,6 +186,39 @@ Discarr is built with a modular architecture:
 - Input validation and sanitization
 - Regular security scanning with Bandit and Safety
 
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`python run_tests.py`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+### Development Guidelines
+
+- Write tests for new features
+- Maintain code coverage above 80%
+- Follow PEP 8 style guidelines
+- Update documentation for API changes
+
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [discord.py](https://github.com/Rapptz/discord.py) - Discord API wrapper
+- [httpx](https://github.com/encode/httpx) - HTTP client
+- [pytest](https://github.com/pytest-dev/pytest) - Testing framework
+
+## 📞 Support
+
+- Create an [issue](https://github.com/EricBriscoe/discarr/issues) for bug reports
+- Start a [discussion](https://github.com/EricBriscoe/discarr/discussions) for questions
+- Check the [wiki](https://github.com/EricBriscoe/discarr/wiki) for documentation
+
+---
+
+**Made with ❤️ for the Radarr and Sonarr community**

@@ -8,6 +8,7 @@ from datetime import datetime
 import discord
 
 from src.utils.discord_utils import get_status_emoji, truncate_title
+from src.utils.time_utils import calculate_elapsed_time, format_elapsed_time
 
 logger = logging.getLogger(__name__)
 
@@ -187,10 +188,10 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
         for field in tv_fields:
             embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
     
-    # No need to add navigation controls to footer, the buttons will be self-explanatory
-    
-    # Add timestamp (Discord will automatically show "Last updated X minutes ago")
-    embed.timestamp = discord.utils.utcnow()
+    # Calculate and add custom elapsed time footer
+    elapsed_time = calculate_elapsed_time(last_updated)
+    elapsed_text = format_elapsed_time(elapsed_time)
+    embed.set_footer(text=elapsed_text)
     
     # Return the embed object
     return embed
@@ -349,10 +350,10 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
             inline=False
         )
     
-    # No need to add navigation controls to footer
-    
-    # Add timestamp (Discord will automatically show "Last updated X minutes ago")
-    embed.timestamp = discord.utils.utcnow()
+    # Calculate and add custom elapsed time footer
+    elapsed_time = calculate_elapsed_time(last_updated)
+    elapsed_text = format_elapsed_time(elapsed_time)
+    embed.set_footer(text=elapsed_text)
     
     return embed
 
