@@ -57,47 +57,113 @@ class CacheManager:
             self._stop_event.wait(self.refresh_interval)
     
     def refresh_data(self):
-        """Refresh data from Radarr and Sonarr in separate threads."""
+        """Refresh data from Radarr and Sonarr using async clients."""
         current_time = time.time()
         if current_time - self.last_refresh < self.refresh_interval and self.radarr_loaded and self.sonarr_loaded:
             return
         
         try:
-            # Submit both API calls to the thread pool
-            future_movie = self.executor.submit(self.radarr_client.get_queue_items)
-            future_tv = self.executor.submit(self.sonarr_client.get_queue_items)
+            # Run async refresh in a new event loop
+            asyncio.run(self._async_refresh_data())
+            self.last_refresh = current_time
+            # Ensure we have valid lists before getting length
+            movie_count = len(self.movie_queue) if isinstance(self.movie_queue, list) else 0
+            tv_count = len(self.tv_queue) if isinstance(self.tv_queue, list) else 0
+            logger.debug(f"Data refresh complete. Found {movie_count} movies and {tv_count} TV shows")
+        except Exception as e:
+            logger.error(f"Error in refresh_data: {e}", exc_info=True)
+    
+    async def _async_refresh_data(self):
+        """Async method to refresh data from both services concurrently."""
+        # Handle each service independently to avoid one failure affecting the other
+        await self._refresh_radarr_data()
+        await self._refresh_sonarr_data()
+    
+    async def _refresh_radarr_data(self):
+        """Refresh Radarr data independently."""
+        try:
+            # Wrap the client call in executor with timeout to handle slow operations
+            movie_queue = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, 
+                    self.radarr_client.get_queue_items
+                ),
+                timeout=10.0
+            )
+            
+            # If the result is a coroutine (shouldn't happen with executor), await it
+            if asyncio.iscoroutine(movie_queue):
+                movie_queue = await movie_queue
             
             # Process movie queue results
-            try:
-                movie_queue = future_movie.result(timeout=10)
+            if movie_queue is None:
+                movie_queue = []
+            
+            if isinstance(movie_queue, list):
                 with self.movie_queue_lock:
                     self.movie_queue = movie_queue
                 # Record progress snapshots for Radarr items
                 self.progress_tracker.record_progress_snapshot(movie_queue, 'radarr')
-                self.radarr_client.get_download_updates()
+                # Get download updates asynchronously
+                try:
+                    update_result = self.radarr_client.get_download_updates()
+                    if asyncio.iscoroutine(update_result):
+                        await update_result
+                except Exception as e:
+                    logger.error(f"Error getting Radarr download updates: {e}")
                 self.radarr_loaded = True
                 logger.debug("Radarr data loaded successfully")
-            except Exception as e:
-                logger.error(f"Error fetching movie queue: {e}")
+            else:
+                logger.error(f"Invalid movie queue data type: {type(movie_queue)}")
+                
+        except Exception as e:
+            logger.error(f"Error refreshing Radarr data: {e}")
+            self.radarr_loaded = False
+    
+    async def _refresh_sonarr_data(self):
+        """Refresh Sonarr data independently."""
+        try:
+            # Wrap the client call in executor with timeout to handle slow operations
+            tv_queue = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, 
+                    self.sonarr_client.get_queue_items
+                ),
+                timeout=10.0
+            )
+            
+            # If the result is a coroutine (shouldn't happen with executor), await it
+            if asyncio.iscoroutine(tv_queue):
+                tv_queue = await tv_queue
             
             # Process TV queue results
-            try:
-                tv_queue = future_tv.result(timeout=10)
+            if tv_queue is None:
+                tv_queue = []
+                
+            if isinstance(tv_queue, list):
                 with self.tv_queue_lock:
                     self.tv_queue = tv_queue
                 # Record progress snapshots for Sonarr items
                 self.progress_tracker.record_progress_snapshot(tv_queue, 'sonarr')
-                self.sonarr_client.get_download_updates()
+                # Get download updates asynchronously
+                try:
+                    update_result = self.sonarr_client.get_download_updates()
+                    if asyncio.iscoroutine(update_result):
+                        await update_result
+                except Exception as e:
+                    logger.error(f"Error getting Sonarr download updates: {e}")
                 self.sonarr_loaded = True
                 logger.debug("Sonarr data loaded successfully")
-            except Exception as e:
-                logger.error(f"Error fetching TV queue: {e}")
+            else:
+                logger.error(f"Invalid TV queue data type: {type(tv_queue)}")
                 
-            self.last_refresh = current_time
-            logger.debug(f"Data refresh complete. Found {len(self.movie_queue)} movies and {len(self.tv_queue)} TV shows")
-        
         except Exception as e:
-            logger.error(f"Error in refresh_data: {e}", exc_info=True)
+            logger.error(f"Error refreshing Sonarr data: {e}")
+            self.sonarr_loaded = False
+    
+    async def _wrap_sync_result(self, result):
+        """Wrap a synchronous result in an async function for testing."""
+        return result
     
     def get_movie_queue(self):
         """Thread-safe access to movie queue data."""

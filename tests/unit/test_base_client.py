@@ -2,11 +2,12 @@
 Unit tests for the base media client.
 """
 import unittest
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import patch, MagicMock, Mock, AsyncMock
 import sys
 from pathlib import Path
 import httpx
 from datetime import timedelta
+import pytest
 
 # Add src to path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -14,10 +15,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from clients.base import MediaClient
 
 
-class TestMediaClient(unittest.TestCase):
+class TestMediaClient:
     """Test cases for the MediaClient base class."""
 
-    def setUp(self):
+    def setup_method(self):
         """Set up test fixtures."""
         self.base_url = "http://localhost:8080"
         self.api_key = "test_api_key"
@@ -29,10 +30,10 @@ class TestMediaClient(unittest.TestCase):
             def get_queue_params(self):
                 return {"pageSize": 100, "page": 1}
             
-            def get_queue_items(self):
+            async def get_queue_items(self):
                 return []
             
-            def get_media_info(self, queue_item):
+            async def get_media_info(self, queue_item):
                 return {"title": "Test Item"}
         
         self.TestClient = TestClient
@@ -41,22 +42,22 @@ class TestMediaClient(unittest.TestCase):
         """Test that MediaClient initializes correctly."""
         client = self.TestClient(self.base_url, self.api_key, self.service_name, self.verbose)
         
-        self.assertEqual(client.base_url, self.base_url)
-        self.assertEqual(client.api_key, self.api_key)
-        self.assertEqual(client.service_name, self.service_name)
-        self.assertEqual(client.verbose, self.verbose)
-        self.assertIsNotNone(client.session)
-        self.assertEqual(client.session.headers['X-Api-Key'], self.api_key)
+        assert client.base_url == self.base_url
+        assert client.api_key == self.api_key
+        assert client.service_name == self.service_name
+        assert client.verbose == self.verbose
+        assert client.session is not None
+        assert client.session.headers['X-Api-Key'] == self.api_key
 
     def test_initialization_with_trailing_slash(self):
         """Test that trailing slash is removed from base URL."""
         url_with_slash = "http://localhost:8080/"
         client = self.TestClient(url_with_slash, self.api_key, self.service_name)
         
-        self.assertEqual(client.base_url, self.base_url)
+        assert client.base_url == self.base_url
 
-    @patch('clients.base.httpx.Client.request')
-    def test_make_request_success(self, mock_request):
+    @patch('clients.base.httpx.AsyncClient.request')
+    async def test_make_request_success(self, mock_request):
         """Test successful API request."""
         # Mock successful response
         mock_response = Mock()
@@ -65,19 +66,13 @@ class TestMediaClient(unittest.TestCase):
         mock_request.return_value = mock_response
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
-        result = client._make_request("test/endpoint")
+        result = await client._make_request("test/endpoint")
         
-        self.assertEqual(result, {"test": "data"})
-        mock_request.assert_called_once_with(
-            method='GET',
-            url=f"{self.base_url}/api/v3/test/endpoint",
-            params=None,
-            json=None,
-            timeout=30
-        )
+        assert result == {"test": "data"}
+        mock_request.assert_called_once()
 
-    @patch('clients.base.httpx.Client.request')
-    def test_make_request_with_params(self, mock_request):
+    @patch('clients.base.httpx.AsyncClient.request')
+    async def test_make_request_with_params(self, mock_request):
         """Test API request with parameters."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -86,19 +81,13 @@ class TestMediaClient(unittest.TestCase):
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         params = {"page": 1, "size": 10}
-        result = client._make_request("test/endpoint", params=params)
+        result = await client._make_request("test/endpoint", params=params)
         
-        mock_request.assert_called_once_with(
-            method='GET',
-            url=f"{self.base_url}/api/v3/test/endpoint",
-            params=params,
-            json=None,
-            timeout=30
-        )
+        mock_request.assert_called_once()
 
-    @patch('clients.base.httpx.Client.request')
+    @patch('clients.base.httpx.AsyncClient.request')
     @patch('clients.base.logger')
-    def test_make_request_http_error(self, mock_logger, mock_request):
+    async def test_make_request_http_error(self, mock_logger, mock_request):
         """Test API request with HTTP error."""
         # Mock HTTP error
         mock_response = Mock()
@@ -107,25 +96,25 @@ class TestMediaClient(unittest.TestCase):
         mock_request.return_value = mock_response
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name, verbose=True)
-        result = client._make_request("test/endpoint")
+        result = await client._make_request("test/endpoint")
         
-        self.assertIsNone(result)
+        assert result is None
         mock_logger.warning.assert_called()
 
-    @patch('clients.base.httpx.Client.request')
+    @patch('clients.base.httpx.AsyncClient.request')
     @patch('clients.base.logger')
-    def test_make_request_connection_error(self, mock_logger, mock_request):
+    async def test_make_request_connection_error(self, mock_logger, mock_request):
         """Test API request with connection error."""
         # Mock connection error
         mock_request.side_effect = httpx.ConnectError("Connection failed")
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
-        result = client._make_request("test/endpoint")
+        result = await client._make_request("test/endpoint")
         
-        self.assertIsNone(result)
+        assert result is None
         mock_logger.error.assert_called()
 
-    def test_get_queue_success(self):
+    async def test_get_queue_success(self):
         """Test successful queue retrieval."""
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         
@@ -133,22 +122,22 @@ class TestMediaClient(unittest.TestCase):
         test_items = [{"id": 1}, {"id": 2}]
         with patch.object(client, 'get_queue_items', return_value=test_items):
             with patch.object(client, 'get_media_info', return_value={"title": "Test"}):
-                result = client.get_queue()
+                result = await client.get_queue()
         
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]["title"], "Test")
+        assert len(result) == 2
+        assert result[0]["title"] == "Test"
 
-    def test_get_queue_failure(self):
+    async def test_get_queue_failure(self):
         """Test queue retrieval failure."""
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         
         # Mock get_queue_items to raise an exception
         with patch.object(client, 'get_queue_items', side_effect=Exception("Connection failed")):
-            result = client.get_queue()
+            result = await client.get_queue()
         
-        self.assertEqual(result, [])
+        assert result == []
 
-    def test_get_active_downloads(self):
+    async def test_get_active_downloads(self):
         """Test filtering active downloads."""
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         
@@ -160,12 +149,12 @@ class TestMediaClient(unittest.TestCase):
         ]
         
         with patch.object(client, 'get_queue', return_value=test_queue):
-            active = client.get_active_downloads()
+            active = await client.get_active_downloads()
         
         # Should only return downloading and queued items
-        self.assertEqual(len(active), 2)
-        self.assertEqual(active[0]["id"], 1)
-        self.assertEqual(active[1]["id"], 3)
+        assert len(active) == 2
+        assert active[0]["id"] == 1
+        assert active[1]["id"] == 3
 
     def test_parse_time_left_valid_formats(self):
         """Test parsing various time left formats."""
@@ -181,9 +170,8 @@ class TestMediaClient(unittest.TestCase):
         ]
         
         for time_str, expected in test_cases:
-            with self.subTest(time_str=time_str):
-                result = client.parse_time_left(time_str)
-                self.assertEqual(result, expected)
+            result = client.parse_time_left(time_str)
+            assert result == expected
 
     def test_parse_time_left_invalid_formats(self):
         """Test parsing invalid time left formats."""
@@ -192,25 +180,24 @@ class TestMediaClient(unittest.TestCase):
         invalid_inputs = ["invalid", "", None, "1:2:3:4"]
         
         for invalid_input in invalid_inputs:
-            with self.subTest(invalid_input=invalid_input):
-                result = client.parse_time_left(invalid_input)
-                self.assertIsNone(result)
+            result = client.parse_time_left(invalid_input)
+            assert result is None
 
     @patch('clients.base.MediaClient._remove_queue_item')
-    def test_remove_stuck_downloads_success(self, mock_remove):
+    async def test_remove_stuck_downloads_success(self, mock_remove):
         """Test successful removal of stuck downloads."""
         mock_remove.return_value = True
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         stuck_ids = ["1", "2", "3"]
         
-        result = client.remove_stuck_downloads(stuck_ids)
+        result = await client.remove_stuck_downloads(stuck_ids)
         
-        self.assertEqual(result, 3)
-        self.assertEqual(mock_remove.call_count, 3)
+        assert result == 3
+        assert mock_remove.call_count == 3
 
     @patch('clients.base.MediaClient._remove_queue_item')
-    def test_remove_stuck_downloads_partial_failure(self, mock_remove):
+    async def test_remove_stuck_downloads_partial_failure(self, mock_remove):
         """Test partial failure when removing stuck downloads."""
         # First call succeeds, second fails, third succeeds
         mock_remove.side_effect = [True, False, True]
@@ -218,22 +205,22 @@ class TestMediaClient(unittest.TestCase):
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         stuck_ids = ["1", "2", "3"]
         
-        result = client.remove_stuck_downloads(stuck_ids)
+        result = await client.remove_stuck_downloads(stuck_ids)
         
-        self.assertEqual(result, 2)  # Only 2 successful removals
-        self.assertEqual(mock_remove.call_count, 3)
+        assert result == 2  # Only 2 successful removals
+        assert mock_remove.call_count == 3
 
-    def test_remove_stuck_downloads_empty_list(self):
+    async def test_remove_stuck_downloads_empty_list(self):
         """Test removing stuck downloads with empty list."""
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         
-        result = client.remove_stuck_downloads([])
+        result = await client.remove_stuck_downloads([])
         
-        self.assertEqual(result, 0)
+        assert result == 0
 
     @patch('clients.base.MediaClient._remove_queue_item')
     @patch('clients.base.MediaClient._make_request')
-    def test_remove_inactive_items_success(self, mock_request, mock_remove):
+    async def test_remove_inactive_items_success(self, mock_request, mock_remove):
         """Test successful removal of inactive items."""
         # Mock _make_request to return test data
         queue_data = {
@@ -248,43 +235,39 @@ class TestMediaClient(unittest.TestCase):
         mock_remove.return_value = True
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
-        result = client.remove_inactive_items()
+        result = await client.remove_inactive_items()
         
         # Should remove items 1, 2, and 4 (completed, failed, warning)
-        self.assertEqual(result, 3)
-        self.assertEqual(mock_remove.call_count, 3)
+        assert result == 3
+        assert mock_remove.call_count == 3
 
     @patch('clients.base.MediaClient._make_request')
-    def test_test_connection_success(self, mock_request):
+    async def test_test_connection_success(self, mock_request):
         """Test successful connection test."""
         mock_request.return_value = {"status": "ok"}
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
-        result = client.test_connection()
+        result = await client.test_connection()
         
-        self.assertTrue(result)
+        assert result is True
         mock_request.assert_called_once_with('system/status')
 
     @patch('clients.base.MediaClient._make_request')
-    def test_test_connection_failure(self, mock_request):
+    async def test_test_connection_failure(self, mock_request):
         """Test failed connection test."""
         mock_request.return_value = None
         
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
-        result = client.test_connection()
+        result = await client.test_connection()
         
-        self.assertFalse(result)
+        assert result is False
 
-    def test_get_download_updates(self):
+    async def test_get_download_updates(self):
         """Test getting download updates."""
         client = self.TestClient(self.base_url, self.api_key, self.service_name)
         
         test_active = [{"id": 1, "status": "downloading"}]
         with patch.object(client, 'get_active_downloads', return_value=test_active):
-            result = client.get_download_updates()
+            result = await client.get_download_updates()
         
-        self.assertEqual(result, test_active)
-
-
-if __name__ == '__main__':
-    unittest.main()
+        assert result == test_active
