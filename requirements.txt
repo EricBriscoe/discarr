@@ -1,4 +1,10 @@
+# Core dependencies
 discord.py>=2.3.0
 python-dotenv>=0.20.0
-requests>=2.27.1
+httpx>=0.24.0
 pytz>=2022.1
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0

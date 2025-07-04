@@ -2,7 +2,7 @@
 Health check service for monitoring Plex, Radarr, and Sonarr.
 """
 import logging
-import requests
+import httpx
 import time
 from datetime import datetime
 from threading import Lock
@@ -35,7 +35,7 @@ class HealthChecker:
             url = f"{self.config.RADARR_URL}/api/v3/system/status"
             headers = {'X-Api-Key': self.config.RADARR_API_KEY}
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = httpx.get(url, headers=headers, timeout=10)
             response_time = time.time() - start_time
             
             with self.status_lock:
@@ -56,7 +56,7 @@ class HealthChecker:
                         'error': f"Status code: {response.status_code}"
                     }
                     return False
-        except requests.RequestException:
+        except httpx.RequestError:
             with self.status_lock:
                 self.health_status['radarr'] = {
                     'status': 'offline',
@@ -78,7 +78,7 @@ class HealthChecker:
             url = f"{self.config.SONARR_URL}/api/v3/system/status"
             headers = {'X-Api-Key': self.config.SONARR_API_KEY}
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = httpx.get(url, headers=headers, timeout=10)
             response_time = time.time() - start_time
             
             with self.status_lock:
@@ -99,7 +99,7 @@ class HealthChecker:
                         'error': f"Status code: {response.status_code}"
                     }
                     return False
-        except requests.RequestException:
+        except httpx.RequestError:
             with self.status_lock:
                 self.health_status['sonarr'] = {
                     'status': 'offline',
@@ -123,7 +123,7 @@ class HealthChecker:
             # No auth headers needed for identity endpoint
             headers = {'Accept': 'application/xml'}
                 
-            response = requests.get(url, headers=headers, timeout=10)
+            response = httpx.get(url, headers=headers, timeout=10)
             response_time = time.time() - start_time
             
             with self.status_lock:
@@ -155,7 +155,7 @@ class HealthChecker:
                         'error': f"Status code: {response.status_code}"
                     }
                     return False
-        except requests.RequestException:
+        except httpx.RequestError:
             with self.status_lock:
                 self.health_status['plex'] = {
                     'status': 'offline',
