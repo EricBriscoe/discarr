@@ -27,6 +27,13 @@ var/
 .installed.cfg
 *.egg
 
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.pytest_cache/
+
 # Logs
 *.log
 logs/
