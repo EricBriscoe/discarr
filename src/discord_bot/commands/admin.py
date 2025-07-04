@@ -5,6 +5,7 @@ Commands that require administrator permissions.
 import logging
 import discord
 import asyncio
+from utils.interaction_utils import safe_defer_interaction, safe_send_response, handle_interaction_error, has_admin_permissions, is_guild_owner
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +29,22 @@ class AdminCommands:
             download_monitor: DownloadMonitor instance
         """
         # Check if user has admin privileges
-        if str(interaction.user.id) != str(interaction.guild.owner_id):
-            await interaction.response.send_message(
-                "Only the server owner can use this command.", 
+        if not is_guild_owner(interaction):
+            await safe_send_response(
+                interaction,
+                content="Only the server owner can use this command.",
                 ephemeral=True
             )
             return
 
-        # Defer the response immediately to avoid timeout
-        await interaction.response.defer(ephemeral=True)
+        # Safely defer the interaction to avoid timeout
+        defer_success = await safe_defer_interaction(interaction, ephemeral=True)
+        if not defer_success:
+            await handle_interaction_error(
+                interaction,
+                "Failed to process command due to interaction timeout. Please try again."
+            )
+            return
 
         # Toggle the global verbose setting
         self.settings.verbose = not self.settings.verbose
@@ -75,14 +83,22 @@ class AdminCommands:
             download_monitor: DownloadMonitor instance
         """
         # Check if user has admin privileges
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "You need administrator permissions to use this command.", 
+        if not has_admin_permissions(interaction):
+            await safe_send_response(
+                interaction,
+                content="You need administrator permissions to use this command.",
                 ephemeral=True
             )
             return
             
-        await interaction.response.defer(ephemeral=True)
+        # Safely defer the interaction to avoid timeout
+        defer_success = await safe_defer_interaction(interaction, ephemeral=True)
+        if not defer_success:
+            await handle_interaction_error(
+                interaction,
+                "Failed to process command due to interaction timeout. Please try again."
+            )
+            return
         
         try:
             # Check if download monitor is available
@@ -171,21 +187,30 @@ class AdminCommands:
             download_monitor: DownloadMonitor instance
         """
         # Check if user has admin privileges
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "You need administrator permissions to use this command.", 
+        if not has_admin_permissions(interaction):
+            await safe_send_response(
+                interaction,
+                content="You need administrator permissions to use this command.",
                 ephemeral=True
             )
             return
             
-        # Always acknowledge the interaction immediately to avoid timeout
-        await interaction.response.defer(ephemeral=True)
+        # Safely defer the interaction to avoid timeout
+        defer_success = await safe_defer_interaction(interaction, ephemeral=True)
+        if not defer_success:
+            # If defer failed, try to send error message
+            await handle_interaction_error(
+                interaction,
+                "Failed to process command due to interaction timeout. Please try again."
+            )
+            return
         
         try:
             # Check if download monitor is available
             if not download_monitor:
-                await interaction.followup.send(
-                    "Download monitor is not initialized yet. Please try again later.", 
+                await safe_send_response(
+                    interaction,
+                    content="Download monitor is not initialized yet. Please try again later.",
                     ephemeral=True
                 )
                 return
