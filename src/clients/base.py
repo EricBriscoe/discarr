@@ -9,7 +9,6 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any, Set
 from datetime import datetime, timedelta
 from collections import defaultdict
-from weakref import WeakValueDictionary
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +67,8 @@ class MediaClient(ABC):
             }
         )
         
-        # Enhanced caching with TTL and weak references
-        self._cache = WeakValueDictionary()
+        # Enhanced caching with TTL
+        self._cache = {}
         self._cache_timestamps = {}
         self._cache_ttl = 300  # 5 minutes TTL
         self._request_semaphore = asyncio.Semaphore(10)  # Limit concurrent requests
@@ -373,7 +372,21 @@ class MediaClient(ABC):
         else:
             # Clean up expired cache entry
             self._cache_timestamps.pop(cache_key, None)
+            self._cache.pop(cache_key, None)
             return None
+    
+    def _cleanup_expired_cache(self) -> None:
+        """Clean up expired cache entries to prevent memory leaks."""
+        current_time = datetime.now().timestamp()
+        expired_keys = []
+        
+        for cache_key, timestamp in self._cache_timestamps.items():
+            if (current_time - timestamp) >= self._cache_ttl:
+                expired_keys.append(cache_key)
+        
+        for key in expired_keys:
+            self._cache_timestamps.pop(key, None)
+            self._cache.pop(key, None)
     
     async def close(self):
         """Close the HTTP client session."""
