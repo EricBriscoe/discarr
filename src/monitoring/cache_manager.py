@@ -24,7 +24,7 @@ class CacheManager:
         self.movie_queue_lock = Lock()
         self.tv_queue_lock = Lock()
         self.last_refresh = 0
-        self.refresh_interval = 5  # Seconds
+        self.refresh_interval = 30  # Seconds
         # Track loading state separately for each service
         self.radarr_loaded = False
         self.sonarr_loaded = False
