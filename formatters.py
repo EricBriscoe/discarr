@@ -82,9 +82,8 @@ def format_movie_section(movie_downloads, pagination_manager):
             "inline": True
         })
         
-        # Add time left in its own field for proper rendering
         embed_fields.append({
-            "name": "Time Left",
+            "name": "Estimated Completion",
             "value": eta,
             "inline": True
         })
