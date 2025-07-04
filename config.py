@@ -41,6 +41,13 @@ CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', 300))  # Default: check every 5
 HEALTH_CHECK_INTERVAL = int(os.getenv('HEALTH_CHECK_INTERVAL', 60))  # Default: check health every minute
 VERBOSE = os.getenv('VERBOSE', 'false').lower() == 'true'
 
+# Progress tracking settings for stuck download detection
+STUCK_THRESHOLD_MINUTES = int(os.getenv('STUCK_THRESHOLD_MINUTES', 120))  # Default: 2 hours no progress
+MIN_PROGRESS_CHANGE = float(os.getenv('MIN_PROGRESS_CHANGE', 1.0))  # Default: 1% progress change required
+MIN_SIZE_CHANGE = int(os.getenv('MIN_SIZE_CHANGE', 104857600))  # Default: 100MB size change required
+PROGRESS_HISTORY_HOURS = int(os.getenv('PROGRESS_HISTORY_HOURS', 4))  # Default: keep 4 hours of snapshots
+MAX_SNAPSHOTS_PER_DOWNLOAD = int(os.getenv('MAX_SNAPSHOTS_PER_DOWNLOAD', 50))  # Default: max 50 snapshots per download
+
 # Create a logger
 logger = logging.getLogger(__name__)
 

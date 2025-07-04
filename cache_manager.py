@@ -8,6 +8,7 @@ import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
+from progress_tracker import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ class CacheManager:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._stop_event = threading.Event()
         self._fetch_thread = None
+        # Initialize progress tracker for stuck download detection
+        self.progress_tracker = ProgressTracker()
     
     def start_background_refresh(self):
         """Start background thread for periodic data refresh."""
@@ -69,6 +72,8 @@ class CacheManager:
                 movie_queue = future_movie.result(timeout=10)
                 with self.movie_queue_lock:
                     self.movie_queue = movie_queue
+                # Record progress snapshots for Radarr items
+                self.progress_tracker.record_progress_snapshot(movie_queue, 'radarr')
                 self.radarr_client.get_download_updates()
                 self.radarr_loaded = True
                 logger.debug("Radarr data loaded successfully")
@@ -80,6 +85,8 @@ class CacheManager:
                 tv_queue = future_tv.result(timeout=10)
                 with self.tv_queue_lock:
                     self.tv_queue = tv_queue
+                # Record progress snapshots for Sonarr items
+                self.progress_tracker.record_progress_snapshot(tv_queue, 'sonarr')
                 self.sonarr_client.get_download_updates()
                 self.sonarr_loaded = True
                 logger.debug("Sonarr data loaded successfully")
@@ -113,3 +120,30 @@ class CacheManager:
     def is_sonarr_ready(self):
         """Check if Sonarr data has been loaded."""
         return self.sonarr_loaded
+    
+    def analyze_stuck_downloads(self):
+        """Analyze progress history to identify stuck downloads.
+        
+        Returns:
+            List of dictionaries containing stuck download information
+        """
+        return self.progress_tracker.analyze_stuck_downloads()
+    
+    def get_progress_statistics(self):
+        """Get overall statistics about tracked downloads.
+        
+        Returns:
+            Dictionary with tracking statistics
+        """
+        return self.progress_tracker.get_statistics()
+    
+    def get_download_progress_summary(self, download_id):
+        """Get a summary of progress for a specific download.
+        
+        Args:
+            download_id: Unique identifier for the download
+            
+        Returns:
+            Dictionary with progress summary or None if not found
+        """
+        return self.progress_tracker.get_download_progress_summary(download_id)

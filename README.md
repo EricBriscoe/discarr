@@ -66,7 +66,30 @@ python bot.py
 
 - `/check` - Manually refresh download status
 - `/verbose` - Toggle verbose logging (admin only)
-- `/cleanup` - Remove inactive downloads from queue (admin only)
+- `/progress` - Show progress tracking statistics (admin only)
+- `/cleanup` - Remove stuck and inactive downloads from queue (admin only)
+
+## Smart Cleanup Features
+
+The `/cleanup` command now uses intelligent progress tracking to identify truly stuck downloads:
+
+- **Progress Tracking**: Monitors download progress over time (default: 4 hours of history)
+- **Stuck Detection**: Identifies downloads with no progress for 2+ hours (configurable)
+- **Smart Removal**: Removes both stuck downloads and traditionally inactive items
+- **Detailed Reporting**: Shows exactly what was removed and why
+
+### Configuration Options
+
+Add these environment variables to customize stuck download detection:
+
+```bash
+# Stuck download detection (optional)
+STUCK_THRESHOLD_MINUTES=120        # Minutes without progress before considered stuck
+MIN_PROGRESS_CHANGE=1.0           # Minimum % progress change required
+MIN_SIZE_CHANGE=104857600         # Minimum bytes downloaded required (100MB)
+PROGRESS_HISTORY_HOURS=4          # Hours of progress history to keep
+MAX_SNAPSHOTS_PER_DOWNLOAD=50     # Maximum snapshots per download
+```
 
 ## Troubleshooting
 
@@ -77,4 +100,3 @@ python bot.py
 ## License
 
 Licensed under the MIT License
-

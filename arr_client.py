@@ -153,7 +153,8 @@ class ArrClient(ABC):
             }
             
             # Add media specific fields
-            queue_item.update(media_info)
+            if media_info:
+                queue_item.update(media_info)
             
             items.append(queue_item)
                 
@@ -237,6 +238,44 @@ class ArrClient(ABC):
             return len(all_ids)
         except requests.RequestException as e:
             logger.error(f"Error removing all items: {e}")
+            if self.verbose and hasattr(e, 'response') and e.response:
+                logger.debug(f"Response: {e.response.status_code} - {e.response.text[:200]}...")
+            return 0
+    
+    def remove_stuck_downloads(self, stuck_download_ids):
+        """Remove specific downloads identified as stuck.
+        
+        Args:
+            stuck_download_ids: List of download IDs to remove
+            
+        Returns:
+            Number of items successfully removed
+        """
+        if not stuck_download_ids:
+            return 0
+        
+        try:
+            url = f"{self.base_url}/api/v3/queue/bulk"
+            payload = {"ids": stuck_download_ids}
+            params = {
+                "removeFromClient": True,
+                "blocklist": False,
+                "skipRedownload": False,
+                "changeCategory": False
+            }
+            
+            if self.verbose:
+                logger.debug(f"Removing {len(stuck_download_ids)} stuck downloads from queue")
+                
+            response = requests.delete(url, headers=self.headers, params=params, json=payload)
+            response.raise_for_status()
+            
+            if self.verbose:
+                logger.debug(f"Successfully removed {len(stuck_download_ids)} stuck downloads from queue")
+                
+            return len(stuck_download_ids)
+        except requests.RequestException as e:
+            logger.error(f"Error removing stuck downloads: {e}")
             if self.verbose and hasattr(e, 'response') and e.response:
                 logger.debug(f"Response: {e.response.status_code} - {e.response.text[:200]}...")
             return 0
