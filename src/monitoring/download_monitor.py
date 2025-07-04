@@ -7,11 +7,11 @@ import logging
 import discord
 from datetime import datetime
 
-from discord_bot.ui.views import PaginationView
-from discord_bot.ui.formatters import format_summary_message, format_loading_message, format_partial_loading_message
-from monitoring.cache_manager import CacheManager
-from clients.radarr import RadarrClient
-from clients.sonarr import SonarrClient
+from src.discord_bot.ui.views import PaginationView
+from src.discord_bot.ui.formatters import format_summary_message, format_loading_message, format_partial_loading_message
+from src.monitoring.cache_manager import CacheManager
+from src.clients.radarr import RadarrClient
+from src.clients.sonarr import SonarrClient
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,10 @@ class DownloadMonitor:
         except Exception as e:
             logger.error(f"Error getting Discord channel: {e}")
             return
+        
+        # Clean up previous bot messages if enabled
+        if self.settings.cleanup_previous_messages:
+            await self._cleanup_previous_messages()
         
         # Start background data refresh
         self.cache_manager.start_background_refresh()
@@ -155,6 +159,31 @@ class DownloadMonitor:
             
         except Exception as e:
             logger.error(f"Error checking downloads: {e}", exc_info=True)
+    
+    async def _cleanup_previous_messages(self):
+        """Clean up any previous messages sent by this bot in the channel."""
+        if not self.channel:
+            logger.warning("No channel available for message cleanup")
+            return
+            
+        try:
+            def is_bot_message(message):
+                return message.author == self.bot.user
+            
+            # Use purge to efficiently delete bot messages
+            deleted = await self.channel.purge(limit=100, check=is_bot_message)
+            
+            if deleted:
+                logger.info(f"Cleaned up {len(deleted)} previous bot messages from channel")
+            else:
+                logger.debug("No previous bot messages found to clean up")
+                
+        except discord.Forbidden:
+            logger.warning("Bot lacks permission to delete messages. Skipping cleanup.")
+        except discord.HTTPException as e:
+            logger.warning(f"HTTP error during message cleanup: {e}")
+        except Exception as e:
+            logger.warning(f"Could not clean up previous messages: {e}")
     
     async def _update_message(self, embed):
         """Update or create the Discord message with the embed.
