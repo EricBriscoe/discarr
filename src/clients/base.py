@@ -108,6 +108,79 @@ class MediaClient(ABC):
         finally:
             # Clean up pending request
             self._pending_requests.pop(request_key, None)
+
+    async def get_all_queue_items_paginated(self, progress_callback=None) -> List[Dict]:
+        """Get all queue items using pagination for large libraries.
+        
+        Args:
+            progress_callback: Optional callback function to report progress
+            
+        Returns:
+            List of all queue items across all pages
+        """
+        all_items = []
+        page = 1
+        total_records = None
+        
+        while True:
+            # Get queue parameters and update page number
+            params = self.get_queue_params()
+            params['page'] = page
+            
+            if self.verbose:
+                logger.debug(f"Fetching {self.service_name} queue page {page}")
+            
+            # Make request with timeout
+            try:
+                queue_data = await asyncio.wait_for(
+                    self._make_request('queue', params=params),
+                    timeout=30.0  # 30 second timeout per page
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout fetching {self.service_name} queue page {page}")
+                break
+            
+            if not queue_data:
+                logger.warning(f"No data returned for {self.service_name} queue page {page}")
+                break
+            
+            records = queue_data.get("records", [])
+            if not records:
+                # No more records, we've reached the end
+                break
+            
+            all_items.extend(records)
+            
+            # Get total record count from first page
+            if total_records is None:
+                total_records = queue_data.get("totalRecords", len(records))
+                if self.verbose:
+                    logger.info(f"{self.service_name} has {total_records} total queue items")
+            
+            # Report progress if callback provided
+            if progress_callback:
+                progress_callback(len(all_items), total_records, page)
+            
+            # Check if we have all records
+            if len(all_items) >= total_records:
+                break
+            
+            # Check if this page was not full (indicates last page)
+            page_size = params.get('pageSize', 1000)
+            if len(records) < page_size:
+                break
+            
+            page += 1
+            
+            # Safety check to prevent infinite loops
+            if page > 100:  # Max 100 pages = 100k items
+                logger.warning(f"Reached maximum page limit for {self.service_name}")
+                break
+        
+        if self.verbose:
+            logger.info(f"Fetched {len(all_items)} total items from {self.service_name} across {page} pages")
+        
+        return all_items
     
     async def _execute_request(self, url: str, method: str, params: Optional[Dict], 
                               data: Optional[Dict]) -> Optional[Dict]:
