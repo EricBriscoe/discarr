@@ -53,7 +53,7 @@ class TestCacheManager:
         assert cache_manager.movie_queue == []
         assert cache_manager.tv_queue == []
         assert cache_manager.last_refresh == 0
-        assert cache_manager.refresh_interval == 5
+        assert cache_manager.refresh_interval == 30
         assert cache_manager.radarr_loaded is False
         assert cache_manager.sonarr_loaded is False
         assert cache_manager._fetch_thread is None
