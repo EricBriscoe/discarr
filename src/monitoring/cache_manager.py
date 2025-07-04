@@ -8,7 +8,7 @@ import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
-from .progress_tracker import ProgressTracker
+from monitoring.progress_tracker import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
