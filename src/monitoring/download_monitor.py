@@ -8,8 +8,9 @@ import discord
 from datetime import datetime
 
 from src.discord_bot.ui.views import PaginationView
-from src.discord_bot.ui.formatters import format_summary_message, format_loading_message, format_partial_loading_message
+from src.discord_bot.ui.formatters import format_summary_message, format_loading_message, format_partial_loading_message, format_health_status_message
 from src.monitoring.cache_manager import CacheManager
+from src.monitoring.health_checker import HealthChecker
 from src.clients.radarr import RadarrClient
 from src.clients.sonarr import SonarrClient
 
@@ -52,7 +53,15 @@ class DownloadMonitor:
         # Initialize pagination view
         self.pagination_view = PaginationView(download_monitor=self)
         
-        logger.info("DownloadMonitor initialized with real clients")
+        # Initialize health checker
+        self.health_checker = HealthChecker(settings)
+        
+        # Health monitoring state
+        self.health_message = None
+        self.last_health_update = None
+        self._health_task = None
+        
+        logger.info("DownloadMonitor initialized with real clients and health checker")
     
     async def start(self):
         """Start the download monitor."""
@@ -82,6 +91,9 @@ class DownloadMonitor:
         # Start the monitoring task
         self._task = asyncio.create_task(self._monitor_loop())
         
+        # Start the health monitoring task
+        self._health_task = asyncio.create_task(self._health_monitor_loop())
+        
         logger.info("DownloadMonitor started successfully")
     
     async def stop(self):
@@ -99,6 +111,14 @@ class DownloadMonitor:
             self._task.cancel()
             try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
+        
+        # Cancel the health monitoring task
+        if self._health_task:
+            self._health_task.cancel()
+            try:
+                await self._health_task
             except asyncio.CancelledError:
                 pass
         
@@ -243,3 +263,70 @@ class DownloadMonitor:
             bool: True if both services have loaded data
         """
         return self.cache_manager.is_data_ready()
+    
+    async def _health_monitor_loop(self):
+        """Health monitoring loop."""
+        try:
+            while self._running:
+                await self.check_health()
+                await asyncio.sleep(self.settings.health_check_interval)
+        except asyncio.CancelledError:
+            logger.info("Health monitor loop cancelled")
+        except Exception as e:
+            logger.error(f"Error in health monitor loop: {e}", exc_info=True)
+    
+    async def check_health(self):
+        """Check and update health status of services."""
+        try:
+            if not self.channel:
+                logger.error("No channel available for health update")
+                return
+            
+            # Update the last health update time
+            self.last_health_update = datetime.now()
+            
+            # Check health of all services
+            health_status = self.health_checker.check_all_services()
+            
+            # Format the health status embed
+            health_embed = format_health_status_message(health_status, self.last_health_update)
+            
+            # Update the health message
+            await self._update_health_message(health_embed)
+            
+            logger.debug("Health status updated successfully")
+            
+        except Exception as e:
+            logger.error(f"Error checking health: {e}", exc_info=True)
+    
+    async def _update_health_message(self, embed):
+        """Update or create the health status message.
+        
+        Args:
+            embed: Discord embed to send
+        """
+        try:
+            if not self.channel:
+                logger.error("No channel available for health message update")
+                return
+            
+            # If we don't have a health message yet, create one
+            if not self.health_message:
+                self.health_message = await self.channel.send(embed=embed)
+                logger.info("Created new health status message")
+            else:
+                # Try to edit the existing message
+                try:
+                    await self.health_message.edit(embed=embed)
+                    logger.debug("Updated existing health status message")
+                except discord.NotFound:
+                    # Message was deleted, create a new one
+                    logger.warning("Previous health message was deleted, creating new one")
+                    self.health_message = await self.channel.send(embed=embed)
+                except discord.HTTPException as e:
+                    logger.error(f"HTTP error updating health message: {e}")
+                    # Try to create a new message
+                    self.health_message = await self.channel.send(embed=embed)
+        
+        except Exception as e:
+            logger.error(f"Error updating health Discord message: {e}", exc_info=True)
