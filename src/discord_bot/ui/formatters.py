@@ -3,13 +3,11 @@ Message formatting utilities for Discarr bot.
 Handles formatting movie and TV show information for Discord messages.
 """
 import logging
-import time
 from datetime import datetime
 
 import discord
-import pytz
 
-from src.utils.discord_utils import format_discord_timestamp, get_status_emoji, truncate_title
+from src.utils.discord_utils import get_status_emoji, truncate_title
 
 logger = logging.getLogger(__name__)
 
@@ -191,15 +189,7 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
     
     # No need to add navigation controls to footer, the buttons will be self-explanatory
     
-    # Add relative time if provided
-    if last_updated:
-        if isinstance(last_updated, datetime):
-            footer_text = format_discord_timestamp(last_updated.isoformat())
-        else:
-            footer_text = format_discord_timestamp(last_updated)
-        embed.set_footer(text=footer_text)
-    
-    # Add timestamp (still needed for Discord's internal tracking)
+    # Add timestamp (Discord will automatically show "Last updated X minutes ago")
     embed.timestamp = discord.utils.utcnow()
     
     # Return the embed object
@@ -297,15 +287,7 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
     
     # No need to add navigation controls to footer
     
-    # Add relative time if provided
-    if last_updated:
-        if isinstance(last_updated, datetime):
-            footer_text = format_discord_timestamp(last_updated.isoformat())
-        else:
-            footer_text = format_discord_timestamp(last_updated)
-        embed.set_footer(text=footer_text)
-    
-    # Add timestamp
+    # Add timestamp (Discord will automatically show "Last updated X minutes ago")
     embed.timestamp = discord.utils.utcnow()
     
     return embed
@@ -347,14 +329,7 @@ def format_health_status_message(health_status, last_updated=None):
     
     embed.add_field(name="📺 Sonarr", value=sonarr_content, inline=False)
     
-    # Add overall status in footer with relative time
-    embed.add_field(
-        name="Last Updated",
-        value=format_discord_timestamp(datetime.now().isoformat()) ,
-        inline=False
-    )
-    
-    # Add timestamp for Discord's internal tracking
+    # Add timestamp for Discord's internal tracking (Discord will automatically show "Last updated X minutes ago")
     embed.timestamp = discord.utils.utcnow()
     
     # Set color based on overall status
