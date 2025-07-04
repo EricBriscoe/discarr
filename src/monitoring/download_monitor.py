@@ -4,6 +4,7 @@ Handles monitoring and displaying download status from Radarr and Sonarr.
 """
 import asyncio
 import logging
+import time
 import discord
 from datetime import datetime
 
@@ -191,7 +192,6 @@ class DownloadMonitor:
                 self.loading_start_time = None
             
             # Check for stuck loading (after 5 minutes, show error)
-            import time
             if self.loading_start_time and (time.time() - self.loading_start_time) > 300:
                 # Show error message for stuck loading
                 radarr_error = None if radarr_ready else "Loading timeout - check server status and library size"
