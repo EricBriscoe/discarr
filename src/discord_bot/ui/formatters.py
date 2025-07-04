@@ -9,7 +9,7 @@ from datetime import datetime
 import discord
 import pytz
 
-from utils import format_discord_timestamp, get_status_emoji, truncate_title
+from utils.discord_utils import format_discord_timestamp, get_status_emoji, truncate_title
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +193,10 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
     
     # Add relative time if provided
     if last_updated:
-        footer_text = format_discord_timestamp(last_updated)
+        if isinstance(last_updated, datetime):
+            footer_text = format_discord_timestamp(last_updated.isoformat())
+        else:
+            footer_text = format_discord_timestamp(last_updated)
         embed.set_footer(text=footer_text)
     
     # Add timestamp (still needed for Discord's internal tracking)
@@ -296,7 +299,10 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
     
     # Add relative time if provided
     if last_updated:
-        footer_text = format_discord_timestamp(last_updated)
+        if isinstance(last_updated, datetime):
+            footer_text = format_discord_timestamp(last_updated.isoformat())
+        else:
+            footer_text = format_discord_timestamp(last_updated)
         embed.set_footer(text=footer_text)
     
     # Add timestamp
