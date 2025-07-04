@@ -255,7 +255,7 @@ class TestCacheManager:
     
     def test_background_refresh_loop(self, cache_manager):
         """Test the background refresh loop."""
-        with patch.object(cache_manager, 'refresh_data') as mock_refresh:
+        with patch.object(cache_manager, 'refresh_data_sync') as mock_refresh:
             # Set a very short refresh interval for testing
             cache_manager.refresh_interval = 0.1
             
@@ -266,7 +266,7 @@ class TestCacheManager:
             
             cache_manager.stop_background_refresh()
             
-            # Verify refresh_data was called multiple times
+            # Verify refresh_data_sync was called multiple times
             assert mock_refresh.call_count >= 2
     
     def test_progress_tracker_integration(self, cache_manager):
