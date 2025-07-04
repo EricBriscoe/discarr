@@ -390,4 +390,17 @@ class MediaClient(ABC):
     
     async def close(self):
         """Close the HTTP client session."""
-        await self.session.aclose()
+        try:
+            if hasattr(self, 'session') and self.session:
+                await self.session.aclose()
+                logger.debug(f"Closed HTTP session for {self.service_name}")
+        except Exception as e:
+            logger.error(f"Error closing HTTP session for {self.service_name}: {e}")
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
