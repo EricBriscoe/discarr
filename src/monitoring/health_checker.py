@@ -24,7 +24,7 @@ class HealthChecker:
         
     def check_radarr_health(self):
         """Check Radarr service health."""
-        if not self.config.RADARR_API_KEY:
+        if not self.config.radarr_api_key:
             with self.status_lock:
                 self.health_status['radarr']['status'] = 'disabled'
                 self.health_status['radarr']['last_check'] = datetime.now()
@@ -32,8 +32,8 @@ class HealthChecker:
             
         try:
             start_time = time.time()
-            url = f"{self.config.RADARR_URL}/api/v3/system/status"
-            headers = {'X-Api-Key': self.config.RADARR_API_KEY}
+            url = f"{self.config.radarr_url}/api/v3/system/status"
+            headers = {'X-Api-Key': self.config.radarr_api_key}
             
             response = httpx.get(url, headers=headers, timeout=10)
             response_time = time.time() - start_time
@@ -67,7 +67,7 @@ class HealthChecker:
             
     def check_sonarr_health(self):
         """Check Sonarr service health."""
-        if not self.config.SONARR_API_KEY:
+        if not self.config.sonarr_api_key:
             with self.status_lock:
                 self.health_status['sonarr']['status'] = 'disabled'
                 self.health_status['sonarr']['last_check'] = datetime.now()
@@ -75,8 +75,8 @@ class HealthChecker:
             
         try:
             start_time = time.time()
-            url = f"{self.config.SONARR_URL}/api/v3/system/status"
-            headers = {'X-Api-Key': self.config.SONARR_API_KEY}
+            url = f"{self.config.sonarr_url}/api/v3/system/status"
+            headers = {'X-Api-Key': self.config.sonarr_api_key}
             
             response = httpx.get(url, headers=headers, timeout=10)
             response_time = time.time() - start_time
@@ -110,7 +110,7 @@ class HealthChecker:
     
     def check_plex_health(self):
         """Check Plex service health using the identity endpoint without authentication."""
-        if not self.config.PLEX_URL:
+        if not self.config.plex_url:
             with self.status_lock:
                 self.health_status['plex']['status'] = 'disabled'
                 self.health_status['plex']['last_check'] = datetime.now()
@@ -118,7 +118,7 @@ class HealthChecker:
             
         try:
             start_time = time.time()
-            url = f"{self.config.PLEX_URL}/identity"
+            url = f"{self.config.plex_url}/identity"
             
             # No auth headers needed for identity endpoint
             headers = {'Accept': 'application/xml'}
