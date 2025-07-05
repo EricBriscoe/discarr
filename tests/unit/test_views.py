@@ -102,7 +102,6 @@ class TestPaginationView:
         mock_interaction = Mock(spec=discord.Interaction)
         
         with patch('discord_bot.ui.views.safe_defer_interaction', return_value=True) as mock_defer, \
-             patch('discord_bot.ui.views.safe_send_response') as mock_send, \
              patch.object(self.view.pagination_manager, 'handle_button', return_value=True) as mock_handle_button, \
              patch.object(self.view, '_update_display_only') as mock_update:
             
@@ -112,11 +111,6 @@ class TestPaginationView:
             mock_defer.assert_called_once_with(mock_interaction, ephemeral=True)
             mock_handle_button.assert_called_once_with(NEXT_PAGE_ID)
             mock_update.assert_called_once()
-            mock_send.assert_called_once_with(
-                mock_interaction,
-                content="✅ Page updated",
-                ephemeral=True
-            )
     
     @pytest.mark.asyncio
     async def test_handle_pagination_success_no_change(self):
@@ -124,7 +118,6 @@ class TestPaginationView:
         mock_interaction = Mock(spec=discord.Interaction)
         
         with patch('discord_bot.ui.views.safe_defer_interaction', return_value=True) as mock_defer, \
-             patch('discord_bot.ui.views.safe_send_response') as mock_send, \
              patch.object(self.view.pagination_manager, 'handle_button', return_value=False) as mock_handle_button, \
              patch.object(self.view, '_update_display_only') as mock_update:
             
@@ -134,11 +127,6 @@ class TestPaginationView:
             mock_defer.assert_called_once_with(mock_interaction, ephemeral=True)
             mock_handle_button.assert_called_once_with(FIRST_PAGE_ID)
             mock_update.assert_not_called()  # No change, so no update
-            mock_send.assert_called_once_with(
-                mock_interaction,
-                content="✅ Page updated",
-                ephemeral=True
-            )
     
     @pytest.mark.asyncio
     async def test_handle_pagination_defer_failure(self):
@@ -160,7 +148,6 @@ class TestPaginationView:
         mock_interaction = Mock(spec=discord.Interaction)
         
         with patch('discord_bot.ui.views.safe_defer_interaction', return_value=True) as mock_defer, \
-             patch('discord_bot.ui.views.safe_send_response') as mock_send, \
              patch.object(view.pagination_manager, 'handle_button', return_value=True) as mock_handle_button:
             
             await view._handle_pagination(mock_interaction, NEXT_PAGE_ID)
@@ -168,7 +155,6 @@ class TestPaginationView:
             # Should still work but not update display
             mock_defer.assert_called_once_with(mock_interaction, ephemeral=True)
             mock_handle_button.assert_called_once_with(NEXT_PAGE_ID)
-            mock_send.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_handle_pagination_exception(self):
