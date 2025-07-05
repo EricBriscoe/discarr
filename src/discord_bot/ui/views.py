@@ -67,13 +67,6 @@ class PaginationView(View):
                 await self._update_display_only()
                 logger.debug(f"Pagination updated via button {button_id}")
             
-            # Send a simple acknowledgment (optional - the display update is the main feedback)
-            await safe_send_response(
-                interaction, 
-                content="✅ Page updated", 
-                ephemeral=True
-            )
-            
         except Exception as e:
             logger.error(f"Error handling pagination button {button_id}: {e}", exc_info=True)
             await handle_interaction_error(
