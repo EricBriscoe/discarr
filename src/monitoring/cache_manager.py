@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 class CacheManager:
     """Manages background data fetching and caching for Radarr and Sonarr."""
     
-    def __init__(self, radarr_client, sonarr_client):
+    def __init__(self, radarr_client, sonarr_client, initial_load_event=None):
         """Initialize the cache manager with Radarr and Sonarr clients."""
         self.radarr_client = radarr_client
         self.sonarr_client = sonarr_client
+        self.initial_load_event = initial_load_event
         self.movie_queue = []
         self.tv_queue = []
         self.movie_queue_lock = Lock()
@@ -102,6 +103,11 @@ class CacheManager:
         # Handle each service independently to avoid one failure affecting the other
         await self._refresh_radarr_data()
         await self._refresh_sonarr_data()
+
+        if self.initial_load_event and not self.initial_load_event.is_set():
+            if self.radarr_loaded and self.sonarr_loaded:
+                logger.info("Initial data load complete, setting event.")
+                self.initial_load_event.set()
     
     async def _refresh_radarr_data(self):
         """Refresh Radarr data independently with enhanced error handling."""
