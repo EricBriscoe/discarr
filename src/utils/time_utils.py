@@ -152,52 +152,26 @@ def calculate_elapsed_time(last_update_time: Optional[datetime]) -> Optional[tim
 
 
 def format_elapsed_time(elapsed_time: Optional[timedelta]) -> str:
-    """Format elapsed time into a human-readable string for the footer.
+    """Format elapsed time into a Discord relative timestamp for the footer.
     
     Args:
         elapsed_time: timedelta object representing elapsed time
         
     Returns:
-        Formatted elapsed time string (e.g., "Updated 2m 30s ago")
+        Discord relative timestamp string (e.g., "Updated <t:1234567890:R>")
     """
     if not elapsed_time:
         return "Updated just now"
         
     try:
-        total_seconds = int(elapsed_time.total_seconds())
+        # Calculate the timestamp when the update occurred
+        update_time = datetime.now() - elapsed_time
         
-        # Handle negative time (shouldn't happen but just in case)
-        if total_seconds < 0:
-            return "Updated just now"
+        # Convert to Unix timestamp
+        timestamp = int(update_time.timestamp())
         
-        # Less than 1 minute
-        if total_seconds < 60:
-            return f"Updated {total_seconds}s ago"
-        
-        # Less than 1 hour
-        minutes = total_seconds // 60
-        if minutes < 60:
-            seconds = total_seconds % 60
-            if seconds > 0:
-                return f"Updated {minutes}m {seconds}s ago"
-            return f"Updated {minutes}m ago"
-        
-        # 1 hour or more
-        hours = minutes // 60
-        remaining_minutes = minutes % 60
-        
-        if hours < 24:
-            if remaining_minutes > 0:
-                return f"Updated {hours}h {remaining_minutes}m ago"
-            return f"Updated {hours}h ago"
-        
-        # 1 day or more
-        days = hours // 24
-        remaining_hours = hours % 24
-        
-        if remaining_hours > 0:
-            return f"Updated {days}d {remaining_hours}h ago"
-        return f"Updated {days}d ago"
+        # Return Discord relative timestamp format
+        return f"Updated <t:{timestamp}:R>"
         
     except (ValueError, TypeError) as e:
         logger.debug(f"Could not format elapsed time: {e}")
