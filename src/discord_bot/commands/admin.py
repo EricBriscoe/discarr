@@ -231,17 +231,17 @@ class AdminCommands:
             radarr_stuck_count = 0
             sonarr_stuck_count = 0
             if download_monitor.cache_manager.radarr_client:
-                radarr_stuck_count = download_monitor.cache_manager.radarr_client.remove_stuck_downloads(radarr_stuck_ids)
+                radarr_stuck_count = await download_monitor.cache_manager.radarr_client.remove_stuck_downloads(radarr_stuck_ids)
             if download_monitor.cache_manager.sonarr_client:
-                sonarr_stuck_count = download_monitor.cache_manager.sonarr_client.remove_stuck_downloads(sonarr_stuck_ids)
+                sonarr_stuck_count = await download_monitor.cache_manager.sonarr_client.remove_stuck_downloads(sonarr_stuck_ids)
             
             # Also remove traditionally inactive items (failed, completed with errors, etc.)
             radarr_inactive_count = 0
             sonarr_inactive_count = 0
             if download_monitor.cache_manager.radarr_client:
-                radarr_inactive_count = download_monitor.cache_manager.radarr_client.remove_inactive_items()
+                radarr_inactive_count = await download_monitor.cache_manager.radarr_client.remove_inactive_items()
             if download_monitor.cache_manager.sonarr_client:
-                sonarr_inactive_count = download_monitor.cache_manager.sonarr_client.remove_inactive_items()
+                sonarr_inactive_count = await download_monitor.cache_manager.sonarr_client.remove_inactive_items()
             
             # Get progress tracking statistics
             progress_stats = download_monitor.cache_manager.get_progress_statistics()
