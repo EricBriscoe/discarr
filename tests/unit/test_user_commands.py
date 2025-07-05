@@ -80,6 +80,9 @@ class TestUserCommands:
         
         mock_download_monitor = AsyncMock()
         
+        # Mock interaction response to simulate not being done yet
+        mock_interaction.response.is_done.return_value = False
+        
         with patch('discord_bot.commands.user.safe_defer_interaction', return_value=False) as mock_defer, \
              patch('discord_bot.commands.user.handle_interaction_error') as mock_error:
             
@@ -168,6 +171,9 @@ class TestUserCommands:
         mock_interaction.channel_id = 123456789
         
         mock_download_monitor = AsyncMock()
+        
+        # Mock interaction response to simulate not being done yet
+        mock_interaction.response.is_done.return_value = False
         
         with patch('discord_bot.commands.user.safe_defer_interaction', return_value=False) as mock_defer, \
              patch('discord_bot.commands.user.handle_interaction_error') as mock_error:
