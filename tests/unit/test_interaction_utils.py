@@ -63,7 +63,7 @@ class TestSafeDeferInteraction:
         result = await safe_defer_interaction(mock_interaction)
         
         # Assert
-        assert result is False
+        assert result is True  # Changed: now returns True when already handled
     
     @pytest.mark.asyncio
     async def test_defer_interaction_timeout(self):

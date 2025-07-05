@@ -39,10 +39,12 @@ class UserCommands:
         # Safely defer the interaction to avoid timeout
         defer_success = await safe_defer_interaction(interaction, ephemeral=True)
         if not defer_success:
-            await handle_interaction_error(
-                interaction,
-                "Failed to process command due to interaction timeout. Please try again."
-            )
+            # Only send error if interaction hasn't been responded to yet
+            if not interaction.response.is_done():
+                await handle_interaction_error(
+                    interaction,
+                    "Failed to process command due to interaction timeout. Please try again."
+                )
             return
 
         # Send confirmation and trigger manual check
@@ -70,10 +72,12 @@ class UserCommands:
         # Safely defer the interaction to avoid timeout
         defer_success = await safe_defer_interaction(interaction, ephemeral=True)
         if not defer_success:
-            await handle_interaction_error(
-                interaction,
-                "Failed to process command due to interaction timeout. Please try again."
-            )
+            # Only send error if interaction hasn't been responded to yet
+            if not interaction.response.is_done():
+                await handle_interaction_error(
+                    interaction,
+                    "Failed to process command due to interaction timeout. Please try again."
+                )
             return
 
         # Send confirmation and trigger manual health check

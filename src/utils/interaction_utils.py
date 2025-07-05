@@ -22,26 +22,27 @@ async def safe_defer_interaction(interaction: discord.Interaction, ephemeral: bo
     try:
         # Check if interaction has already been responded to
         if interaction.response.is_done():
-            logger.warning("Interaction has already been responded to")
-            return False
+            logger.warning(f"Interaction {interaction.id} has already been responded to")
+            return True  # Return True since interaction is already handled
             
+        logger.debug(f"Attempting to defer interaction {interaction.id}")
         await interaction.response.defer(ephemeral=ephemeral)
-        logger.debug("Successfully deferred interaction")
+        logger.debug(f"Successfully deferred interaction {interaction.id}")
         return True
         
     except discord.errors.NotFound as e:
         if e.code == 10062:  # Unknown interaction
-            logger.error("Interaction token expired or invalid (10062)")
+            logger.error(f"Interaction {interaction.id} token expired or invalid (10062)")
         else:
-            logger.error(f"Interaction not found: {e}")
+            logger.error(f"Interaction {interaction.id} not found: {e}")
         return False
         
     except discord.errors.HTTPException as e:
-        logger.error(f"HTTP error while deferring interaction: {e}")
+        logger.error(f"HTTP error while deferring interaction {interaction.id}: {e}")
         return False
         
     except Exception as e:
-        logger.error(f"Unexpected error while deferring interaction: {e}", exc_info=True)
+        logger.error(f"Unexpected error while deferring interaction {interaction.id}: {e}", exc_info=True)
         return False
 
 
