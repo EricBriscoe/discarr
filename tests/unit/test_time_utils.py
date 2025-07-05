@@ -207,6 +207,63 @@ class TestTimeUtils(unittest.TestCase):
         self.assertTrue(result.startswith('<t:'))
         self.assertTrue(result.endswith(':R>'))
 
+    def test_format_elapsed_time_none_input(self):
+        """Test format_elapsed_time with None input."""
+        result = format_elapsed_time(None)
+        self.assertEqual(result, "Updated just now")
+
+    @patch('utils.time_utils.datetime')
+    def test_format_elapsed_time_with_timedelta(self, mock_datetime):
+        """Test format_elapsed_time returns Discord timestamp format."""
+        # Mock current time
+        mock_now = datetime(2024, 1, 15, 12, 0, 0)
+        mock_datetime.now.return_value = mock_now
+        
+        # Test with 5 minutes elapsed time
+        elapsed = timedelta(minutes=5)
+        result = format_elapsed_time(elapsed)
+        
+        # Should return Discord timestamp format starting with "Updated <t:"
+        self.assertIsInstance(result, str)
+        self.assertTrue(result.startswith('Updated <t:'))
+        self.assertTrue(result.endswith(':R>'))
+
+    @patch('utils.time_utils.datetime')
+    def test_format_elapsed_time_with_hours(self, mock_datetime):
+        """Test format_elapsed_time with hours elapsed."""
+        # Mock current time
+        mock_now = datetime(2024, 1, 15, 12, 0, 0)
+        mock_datetime.now.return_value = mock_now
+        
+        # Test with 2 hours elapsed time
+        elapsed = timedelta(hours=2)
+        result = format_elapsed_time(elapsed)
+        
+        # Should return Discord timestamp format
+        self.assertIsInstance(result, str)
+        self.assertTrue(result.startswith('Updated <t:'))
+        self.assertTrue(result.endswith(':R>'))
+
+    def test_calculate_elapsed_time_none_input(self):
+        """Test calculate_elapsed_time with None input."""
+        result = calculate_elapsed_time(None)
+        self.assertIsNone(result)
+
+    @patch('utils.time_utils.datetime')
+    def test_calculate_elapsed_time_with_datetime(self, mock_datetime):
+        """Test calculate_elapsed_time with valid datetime."""
+        # Mock current time
+        mock_now = datetime(2024, 1, 15, 12, 0, 0)
+        mock_datetime.now.return_value = mock_now
+        
+        # Test with a past datetime (1 hour ago)
+        past_time = datetime(2024, 1, 15, 11, 0, 0)
+        result = calculate_elapsed_time(past_time)
+        
+        # Should return a timedelta of 1 hour
+        self.assertIsInstance(result, timedelta)
+        self.assertEqual(result, timedelta(hours=1))
+
 
 if __name__ == '__main__':
     unittest.main()
