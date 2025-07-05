@@ -254,8 +254,8 @@ class TestFormatSummaryMessage:
         # Verify pagination was updated
         self.mock_pagination.update_page_limits.assert_called_once_with(1, 1)
         
-        # Verify footer
-        assert embed.footer.text == "Last updated 5 minutes ago"
+        # Verify description contains the elapsed time
+        assert "Last updated 5 minutes ago" in embed.description
     
     @patch('discord_bot.ui.formatters.format_movie_section')
     @patch('discord_bot.ui.formatters.format_tv_section')

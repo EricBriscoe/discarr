@@ -147,11 +147,15 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
     # Update pagination limits first
     pagination_manager.update_page_limits(len(movie_downloads), len(tv_downloads))
     
+    # Calculate elapsed time for the description
+    elapsed_time = calculate_elapsed_time(last_updated)
+    elapsed_text = format_elapsed_time(elapsed_time)
+    
     # Create a new embed
     embed = discord.Embed(
         title="📊 Download Status",
         color=discord.Color.blue(),
-        description="Current download status for movies and TV shows"
+        description=f"Current download status. Last updated: {elapsed_text}"
     )
     
     # Get pagination information
@@ -187,11 +191,6 @@ def format_summary_message(movie_downloads, tv_downloads, pagination_manager, la
     if not tv_empty_message:
         for field in tv_fields:
             embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
-    
-    # Calculate and add custom elapsed time footer
-    elapsed_time = calculate_elapsed_time(last_updated)
-    elapsed_text = format_elapsed_time(elapsed_time)
-    embed.set_footer(text=elapsed_text)
     
     # Return the embed object
     return embed
@@ -289,11 +288,15 @@ def format_error_message(radarr_error=None, sonarr_error=None):
 
 def format_partial_loading_message(movie_downloads, tv_downloads, pagination_manager, radarr_ready, sonarr_ready, last_updated=None):
     """Create a message for when one service is ready but the other is still loading."""
+    # Calculate elapsed time for the description
+    elapsed_time = calculate_elapsed_time(last_updated)
+    elapsed_text = format_elapsed_time(elapsed_time)
+
     # Create a new embed
     embed = discord.Embed(
         title="📊 Download Status",
         color=discord.Color.blue(),
-        description="Current download status for movies and TV shows"
+        description=f"Current download status. Last updated: {elapsed_text}"
     )
     
     # Update pagination limits for the service that's ready
@@ -350,11 +353,6 @@ def format_partial_loading_message(movie_downloads, tv_downloads, pagination_man
             inline=False
         )
     
-    # Calculate and add custom elapsed time footer
-    elapsed_time = calculate_elapsed_time(last_updated)
-    elapsed_text = format_elapsed_time(elapsed_time)
-    embed.set_footer(text=elapsed_text)
-    
     return embed
 
 def format_health_status_message(health_status, last_updated=None):
@@ -367,10 +365,14 @@ def format_health_status_message(health_status, last_updated=None):
     Returns:
         A Discord embed object containing the health status information
     """
+    # Calculate elapsed time for the description
+    elapsed_time = calculate_elapsed_time(last_updated)
+    elapsed_text = format_elapsed_time(elapsed_time)
+
     embed = discord.Embed(
         title="🏥 Service Health Status",
         color=discord.Color.green(),
-        description="Current health status of media server services"
+        description=f"Current health status of media server services. Last updated: {elapsed_text}"
     )
     
     # Add Plex status field - without individual timestamp

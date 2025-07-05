@@ -210,7 +210,7 @@ class TestTimeUtils(unittest.TestCase):
     def test_format_elapsed_time_none_input(self):
         """Test format_elapsed_time with None input."""
         result = format_elapsed_time(None)
-        self.assertEqual(result, "Updated just now")
+        self.assertEqual(result, "")
 
     @patch('utils.time_utils.datetime')
     def test_format_elapsed_time_with_timedelta(self, mock_datetime):
@@ -223,9 +223,9 @@ class TestTimeUtils(unittest.TestCase):
         elapsed = timedelta(minutes=5)
         result = format_elapsed_time(elapsed)
         
-        # Should return Discord timestamp format starting with "Updated <t:"
+        # Should return Discord timestamp format
         self.assertIsInstance(result, str)
-        self.assertTrue(result.startswith('Updated <t:'))
+        self.assertTrue(result.startswith('<t:'))
         self.assertTrue(result.endswith(':R>'))
 
     @patch('utils.time_utils.datetime')
@@ -241,7 +241,7 @@ class TestTimeUtils(unittest.TestCase):
         
         # Should return Discord timestamp format
         self.assertIsInstance(result, str)
-        self.assertTrue(result.startswith('Updated <t:'))
+        self.assertTrue(result.startswith('<t:'))
         self.assertTrue(result.endswith(':R>'))
 
     def test_calculate_elapsed_time_none_input(self):

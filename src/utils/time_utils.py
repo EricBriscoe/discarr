@@ -152,16 +152,16 @@ def calculate_elapsed_time(last_update_time: Optional[datetime]) -> Optional[tim
 
 
 def format_elapsed_time(elapsed_time: Optional[timedelta]) -> str:
-    """Format elapsed time into a Discord relative timestamp for the footer.
+    """Format elapsed time into a Discord relative timestamp.
     
     Args:
         elapsed_time: timedelta object representing elapsed time
         
     Returns:
-        Discord relative timestamp string (e.g., "Updated <t:1234567890:R>")
+        Discord relative timestamp string (e.g., "<t:1234567890:R>") or an empty string.
     """
     if not elapsed_time:
-        return "Updated just now"
+        return ""
         
     try:
         # Calculate the timestamp when the update occurred
@@ -171,8 +171,8 @@ def format_elapsed_time(elapsed_time: Optional[timedelta]) -> str:
         timestamp = int(update_time.timestamp())
         
         # Return Discord relative timestamp format
-        return f"Updated <t:{timestamp}:R>"
+        return f"<t:{timestamp}:R>"
         
     except (ValueError, TypeError) as e:
         logger.debug(f"Could not format elapsed time: {e}")
-        return "Updated recently"
+        return ""
