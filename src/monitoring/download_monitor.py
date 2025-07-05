@@ -36,6 +36,7 @@ class DownloadMonitor:
         self._task = None
         self.loading_start_time = None
         self.last_error_state = {'radarr': None, 'sonarr': None}
+        self.initial_load_event = asyncio.Event()
         
         # Initialize clients
         self.radarr_client = RadarrClient(
@@ -50,7 +51,7 @@ class DownloadMonitor:
         )
         
         # Initialize cache manager
-        self.cache_manager = CacheManager(self.radarr_client, self.sonarr_client)
+        self.cache_manager = CacheManager(self.radarr_client, self.sonarr_client, self.initial_load_event)
         
         # Initialize pagination view (import locally to avoid circular imports)
         from src.discord_bot.ui.views import PaginationView
@@ -164,9 +165,16 @@ class DownloadMonitor:
     async def _monitor_loop(self):
         """Main monitoring loop."""
         try:
+            logger.info("Waiting for initial data load to complete...")
+            await self.initial_load_event.wait()
+            logger.info("Initial data load complete. Starting monitoring loop.")
+            
+            # Perform an immediate check after initial load
+            await self.check_downloads()
+            
             while self._running:
-                await self.check_downloads()
                 await asyncio.sleep(self.settings.check_interval)
+                await self.check_downloads()
         except asyncio.CancelledError:
             logger.info("Monitor loop cancelled")
         except Exception as e:
