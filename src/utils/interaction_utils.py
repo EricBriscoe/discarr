@@ -127,7 +127,7 @@ async def handle_interaction_error(interaction: discord.Interaction, error_messa
         logger.error(f"Failed to handle interaction error: {e}", exc_info=True)
 
 
-def has_admin_permissions(interaction: discord.Interaction) -> bool:
+async def has_admin_permissions(interaction: discord.Interaction) -> bool:
     """
     Check if the user has administrator permissions in the guild.
     
@@ -154,7 +154,7 @@ def has_admin_permissions(interaction: discord.Interaction) -> bool:
         return False
 
 
-def is_guild_owner(interaction: discord.Interaction) -> bool:
+async def is_guild_owner(interaction: discord.Interaction) -> bool:
     """
     Check if the user is the guild owner.
     

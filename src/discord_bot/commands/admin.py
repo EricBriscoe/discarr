@@ -29,7 +29,7 @@ class AdminCommands:
             download_monitor: DownloadMonitor instance
         """
         # Check if user has admin privileges
-        if not is_guild_owner(interaction):
+        if not await is_guild_owner(interaction):
             await safe_send_response(
                 interaction,
                 content="Only the server owner can use this command.",
@@ -85,7 +85,7 @@ class AdminCommands:
             download_monitor: DownloadMonitor instance
         """
         # Check if user has admin privileges
-        if not has_admin_permissions(interaction):
+        if not await has_admin_permissions(interaction):
             await safe_send_response(
                 interaction,
                 content="You need administrator permissions to use this command.",
@@ -191,7 +191,7 @@ class AdminCommands:
             download_monitor: DownloadMonitor instance
         """
         # Check if user has admin privileges
-        if not has_admin_permissions(interaction):
+        if not await has_admin_permissions(interaction):
             await safe_send_response(
                 interaction,
                 content="You need administrator permissions to use this command.",
