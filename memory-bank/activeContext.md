@@ -1,29 +1,31 @@
 # Active Context: Discarr
 
 ## Current Work Focus
-- **Bug Fix**: Resolved a persistent timeout issue with the `/cleanup` command.
-- **Cause**: The interaction token was expiring before the command could be deferred. The root cause was suspected to be a blocking call in the permission-checking functions (`has_admin_permissions` and `is_guild_owner`).
+- **Bug Fix**: Resolved a persistent interaction timeout issue affecting all commands and buttons.
+- **Cause**: The root cause was identified as blocking I/O in the `HealthChecker` background task. The synchronous `httpx.get()` calls were freezing the `asyncio` event loop, preventing the bot from processing new interactions (like command invocations or button clicks) in time, leading to "token expired" errors.
 - **Files Modified**: 
-  - `src/discord_bot/commands/admin.py`
-  - `src/utils/interaction_utils.py`
+  - `src/monitoring/health_checker.py`
+  - `src/monitoring/download_monitor.py`
 
 ## Recent Changes
-- **`interaction_utils.py`**:
-  - Converted `has_admin_permissions` and `is_guild_owner` to `async def` functions to prevent any potential blocking I/O on the event loop.
-- **`admin.py`**:
-  - Updated all calls to `has_admin_permissions` and `is_guild_owner` to use `await`.
-  - This ensures that the permission checks are non-blocking and happen asynchronously.
+- **`health_checker.py`**:
+  - Refactored the entire class to be fully asynchronous.
+  - Replaced blocking `httpx.get()` calls with `await client.get()` using an `httpx.AsyncClient`.
+  - Used `asyncio.gather` to run all health checks concurrently for better performance.
+- **`download_monitor.py`**:
+  - Updated the `check_health` and `_create_initial_health_message` methods to `await` the new asynchronous `check_all_services()` call.
 
 ## Next Steps
-1. **Update Progress**: Update `progress.md` to reflect this final fix.
-2. **Final Review**: Confirm that this resolves the user's issue.
+1. **Update Progress**: Update `progress.md` to reflect this critical fix.
+2. **Final Review**: This should finally resolve all interaction timeout issues.
 
 ## Active Decisions & Considerations
-- **Async Everywhere**: When in doubt, make utility functions that interact with `discord.py` objects asynchronous to avoid blocking the event loop. Even seemingly simple property accesses can sometimes trigger I/O.
+- **No Blocking I/O**: Absolutely no blocking I/O operations should exist on the main event loop. All network requests, file operations, etc., must be asynchronous.
 
 ## Important Patterns & Preferences
-- **Non-Blocking Code**: It is critical to ensure that no code blocks the event loop, especially in command handlers before a deferral.
+- **Async Purity**: Background tasks are just as important as foreground command handlers when it comes to maintaining a non-blocking event loop. A single blocking call in a background loop can bring the entire bot to its knees.
 
 ## Learnings & Project Insights
-- The most obscure bugs are often related to blocking I/O in an async environment.
-- When a command is timing out before deferral, every single line of code before the `defer()` call is a suspect, no matter how innocent it looks.
+- Interaction timeout errors are almost always caused by a blocked event loop.
+- The source of the block can be anywhere in the application, not just in the code for the command that's failing. Background tasks are a common culprit.
+- Thoroughly auditing the entire codebase for blocking calls is essential for a stable `asyncio` application.
