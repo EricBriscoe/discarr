@@ -22,7 +22,7 @@ def main():
         test_args = ["tests/"]
     
     # Run pytest with the arguments
-    cmd = ["python", "-m", "pytest"] + test_args
+    cmd = ["python", "-m", "pytest", "--cov=src", "--cov-report=html"] + test_args
     
     print(f"Running: {' '.join(cmd)}")
     print("-" * 50)
