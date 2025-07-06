@@ -199,25 +199,28 @@ class AdminCommands:
             )
             return
             
-        # Safely defer the interaction to avoid timeout
+        # Defer interaction to avoid timeout
         defer_success = await safe_defer_interaction(interaction, ephemeral=True)
         if not defer_success:
-            # Only send error if interaction hasn't been responded to yet
-            if not interaction.response.is_done():
-                await handle_interaction_error(
-                    interaction,
-                    "Failed to process command due to interaction timeout. Please try again."
-                )
             return
-        
+
+        # Send initial "in progress" message
+        in_progress_embed = discord.Embed(
+            title="🧹 Smart Queue Cleanup in Progress...",
+            description="Analyzing download queue. This may take a moment.",
+            color=discord.Color.blue()
+        )
+        await interaction.followup.send(embed=in_progress_embed, ephemeral=True)
+
         try:
             # Check if download monitor is available
             if not download_monitor:
-                await safe_send_response(
-                    interaction,
-                    content="Download monitor is not initialized yet. Please try again later.",
-                    ephemeral=True
+                error_embed = discord.Embed(
+                    title="❌ Error",
+                    description="Download monitor is not initialized yet. Please try again later.",
+                    color=discord.Color.red()
                 )
+                await interaction.edit_original_response(embed=error_embed)
                 return
             
             # Analyze stuck downloads using progress tracking
@@ -248,7 +251,7 @@ class AdminCommands:
             
             # Create detailed response embed
             embed = discord.Embed(
-                title="Smart Queue Cleanup Completed",
+                title="✅ Smart Queue Cleanup Completed",
                 description="Analyzed download progress and removed stuck/inactive items.",
                 color=discord.Color.green()
             )
@@ -304,8 +307,8 @@ class AdminCommands:
             else:
                 embed.color = discord.Color.green()   # Green if nothing to clean
             
-            # Send the final response
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            # Edit the original message with the final results
+            await interaction.edit_original_response(embed=embed)
             
             # Refresh the queue display
             if download_monitor:
@@ -314,4 +317,9 @@ class AdminCommands:
                 
         except Exception as e:
             logger.error(f"Error in cleanup command: {e}", exc_info=True)
-            await interaction.followup.send(f"An error occurred during cleanup: {str(e)}", ephemeral=True)
+            error_embed = discord.Embed(
+                title="❌ Error during cleanup",
+                description=f"An unexpected error occurred: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.edit_original_response(embed=error_embed)
