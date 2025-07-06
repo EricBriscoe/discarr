@@ -150,7 +150,7 @@ class DownloadMonitor:
             self.last_health_update = datetime.now()
             
             # Check health of all services
-            health_status = self.health_checker.check_all_services()
+            health_status = await self.health_checker.check_all_services()
             
             # Format the health status embed
             health_embed = format_health_status_message(health_status, self.last_health_update)
@@ -346,7 +346,7 @@ class DownloadMonitor:
             self.last_health_update = datetime.now()
             
             # Check health of all services
-            health_status = self.health_checker.check_all_services()
+            health_status = await self.health_checker.check_all_services()
             
             # Format the health status embed
             health_embed = format_health_status_message(health_status, self.last_health_update)
