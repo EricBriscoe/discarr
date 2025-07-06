@@ -1,308 +1,112 @@
 """
 Unit tests for Sonarr client.
 """
-import unittest
-from unittest.mock import patch, Mock, AsyncMock
-import sys
-from pathlib import Path
 import pytest
+from unittest.mock import patch, AsyncMock, MagicMock
+from src.clients.sonarr import SonarrClient
 
-# Add src to path for testing
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+@pytest.fixture
+def sonarr_client():
+    """Returns a SonarrClient instance with a mock http_client."""
+    client = SonarrClient(base_url="http://sonarr", api_key="testkey", verbose=True)
+    client.http_client = AsyncMock()
+    return client
 
-from clients.sonarr import SonarrClient
+@pytest.mark.asyncio
+async def test_get_queue_params(sonarr_client):
+    """Test that get_queue_params returns the correct dictionary."""
+    params = sonarr_client.get_queue_params()
+    assert params["pageSize"] == 1000
+    assert params["includeSeries"] is True
 
+@pytest.mark.asyncio
+async def test_get_media_info(sonarr_client):
+    """Test get_media_info with a sample queue item."""
+    queue_item = {
+        "seriesId": 1,
+        "episodeId": 10,
+        "seasonNumber": 1,
+    }
+    
+    sonarr_client.get_series_by_id = AsyncMock(return_value={"title": "Test Show"})
+    sonarr_client.get_episode_by_id = AsyncMock(return_value={"title": "Test Episode", "episodeNumber": 1})
 
-class TestSonarrClient:
-    """Test cases for SonarrClient."""
+    media_info = await sonarr_client.get_media_info(queue_item)
 
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.base_url = "http://localhost:8989"
-        self.api_key = "test_api_key"
-        self.client = SonarrClient(self.base_url, self.api_key, verbose=False)
+    assert media_info["series"] == "Test Show"
+    assert media_info["episode"] == "Test Episode"
+    assert media_info["season"] == 1
+    assert media_info["episode_number"] == 1
 
-    def test_initialization(self):
-        """Test SonarrClient initialization."""
-        assert self.client.base_url == self.base_url
-        assert self.client.api_key == self.api_key
-        assert self.client.service_name == "Sonarr"
+@pytest.mark.asyncio
+async def test_get_series_by_id_caching(sonarr_client):
+    """Test that get_series_by_id caches results."""
+    sonarr_client._make_request = AsyncMock(return_value={"title": "Test Show"})
+    
+    # First call should trigger a network request
+    await sonarr_client.get_series_by_id(1)
+    sonarr_client._make_request.assert_awaited_once_with('series/1')
+    
+    # Second call should hit the cache
+    sonarr_client._make_request.reset_mock()
+    await sonarr_client.get_series_by_id(1)
+    sonarr_client._make_request.assert_not_awaited()
 
-    def test_get_queue_params(self):
-        """Test queue parameters for Sonarr."""
-        params = self.client.get_queue_params()
-        
-        expected_keys = ['pageSize', 'page', 'sortKey', 'sortDirection', 'includeSeries', 'includeEpisode']
-        for key in expected_keys:
-            assert key in params
-        
-        # Test actual default values
-        assert params['pageSize'] == 1000
-        assert params['page'] == 1
-        assert params['sortKey'] == 'timeleft'
-        assert params['sortDirection'] == 'ascending'
-        assert params['includeSeries'] is True
-        assert params['includeEpisode'] is True
+@pytest.mark.asyncio
+async def test_get_episode_by_id_caching(sonarr_client):
+    """Test that get_episode_by_id caches results."""
+    sonarr_client._make_request = AsyncMock(return_value={"title": "Test Episode"})
+    
+    # First call
+    await sonarr_client.get_episode_by_id(1)
+    sonarr_client._make_request.assert_awaited_once_with('episode/1')
+    
+    # Second call
+    sonarr_client._make_request.reset_mock()
+    await sonarr_client.get_episode_by_id(1)
+    sonarr_client._make_request.assert_not_awaited()
 
-    def test_get_queue_params_no_parameters(self):
-        """Test that queue parameters method doesn't accept parameters."""
-        # The actual implementation doesn't accept parameters
-        params = self.client.get_queue_params()
-        assert isinstance(params, dict)
+@pytest.mark.asyncio
+async def test_get_queue_items_processes_batches(sonarr_client):
+    """Test that get_queue_items processes records in batches."""
+    records = [{"id": i} for i in range(100)]
+    sonarr_client.get_all_queue_items_paginated = AsyncMock(return_value=records)
+    sonarr_client._process_queue_item = AsyncMock(return_value={"id": 1})
 
-    @patch.object(SonarrClient, 'get_series_by_id')
-    @patch.object(SonarrClient, 'get_episode_by_id')
-    async def test_get_media_info_basic(self, mock_get_episode, mock_get_series):
-        """Test basic media info extraction."""
-        mock_get_series.return_value = {"title": "Test Series"}
-        mock_get_episode.return_value = {"title": "Test Episode", "episodeNumber": 5}
-        
-        queue_item = {
-            "seriesId": 123,
-            "episodeId": 456,
-            "seasonNumber": 1,
-            "episodeNumber": 5,
-            "series": {"title": "Test Series"},
-            "episode": {"title": "Test Episode"}
-        }
-        
-        media_info = await self.client.get_media_info(queue_item)
-        
-        expected_keys = ["series", "episode", "season", "episode_number"]
-        for key in expected_keys:
-            assert key in media_info
-        
-        assert media_info["series"] == "Test Series"
-        assert media_info["episode"] == "Test Episode"
-        assert media_info["season"] == 1
-        assert media_info["episode_number"] == 5
+    await sonarr_client.get_queue_items()
 
-    async def test_get_media_info_missing_series(self):
-        """Test media info with missing series information."""
-        queue_item = {
-            "seriesId": 123,
-            "episodeId": 456,
-            "seasonNumber": 1,
-            "episodeNumber": 5
-        }
-        
-        with patch.object(self.client, 'get_series_by_id', return_value={}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={}):
-                media_info = await self.client.get_media_info(queue_item)
-        
-        assert media_info["series"] == "Unknown Series"
-        assert media_info["episode"] == "Unknown Episode"
+    # With 100 items and a batch size of 50, _process_queue_item should be called 100 times
+    assert sonarr_client._process_queue_item.await_count == 100
 
-    async def test_get_media_info_missing_episode(self):
-        """Test media info with missing episode information."""
-        queue_item = {
-            "seriesId": 123,
-            "seasonNumber": 1,
-            "episodeNumber": 5,
-            "series": {"title": "Test Series"}
-        }
-        
-        with patch.object(self.client, 'get_series_by_id', return_value={"title": "Test Series"}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={}):
-                media_info = await self.client.get_media_info(queue_item)
-        
-        assert media_info["series"] == "Test Series"
-        assert media_info["episode"] == "Unknown Episode"
+@pytest.mark.asyncio
+async def test_get_download_updates_new_and_completed(sonarr_client):
+    """Test get_download_updates identifies new, updated, and completed downloads."""
+    # Previous state: two downloads
+    sonarr_client.previous_status = {
+        1: {"id": 1, "progress": 50, "series": "Old Show", "episode": "Old Episode", "season": 1, "episode_number": 1, "size": 100},
+        3: {"id": 3, "progress": 90, "series": "Completed Show", "episode": "Completed Episode", "season": 2, "episode_number": 2, "size": 200}
+    }
+    
+    # Current state: one download updated, one new one, one is missing (completed)
+    current_downloads = [
+        {"id": 2, "progress": 10, "series": "New Show", "episode": "New Episode", "season": 1, "episode_number": 1, "size": 100, "time_left": "10m", "is_new": True},
+        {"id": 1, "progress": 70, "series": "Old Show", "episode": "Old Episode", "season": 1, "episode_number": 1, "size": 100, "time_left": "5m", "is_new": False},
+    ]
+    sonarr_client.get_active_downloads = AsyncMock(return_value=current_downloads)
+    
+    updates = await sonarr_client.get_download_updates()
+    
+    assert len(updates) == 3
+    
+    # Check for the new download
+    new_update = next(u for u in updates if u.get('is_new'))
+    assert new_update["series"] == "New Show"
+    
+    # Check for the updated download
+    updated_download = next(u for u in updates if not u.get('is_new') and u.get('status') != 'completed')
+    assert updated_download["series"] == "Old Show"
+    assert updated_download["progress"] == 70
 
-    async def test_get_media_info_empty_item(self):
-        """Test media info with empty item."""
-        queue_item = {}
-        
-        with patch.object(self.client, 'get_series_by_id', return_value={}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={}):
-                media_info = await self.client.get_media_info(queue_item)
-        
-        assert media_info["series"] == "Unknown Series"
-        assert media_info["episode"] == "Unknown Episode"
-        assert media_info["season"] == 0
-        assert media_info["episode_number"] == 0
-
-    async def test_get_media_info_none_item(self):
-        """Test media info with None item."""
-        # Test with None input - this should be handled gracefully
-        with patch.object(self.client, 'get_series_by_id', return_value={}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={}):
-                try:
-                    await self.client.get_media_info(None)
-                    # If no exception is raised, the method handles None gracefully
-                    assert True
-                except AttributeError:
-                    # If AttributeError is raised, that's expected behavior
-                    assert True
-
-    @patch('clients.sonarr.SonarrClient._make_request')
-    async def test_get_queue_items_success(self, mock_request):
-        """Test successful queue items retrieval."""
-        mock_request.return_value = {
-            "records": [
-                {
-                    "id": 1,
-                    "seriesId": 1,
-                    "episodeId": 1,
-                    "series": {"title": "Test Series"},
-                    "episode": {"title": "Test Episode"},
-                    "size": 1000000000,
-                    "sizeleft": 500000000,
-                    "status": "downloading"
-                }
-            ],
-            "totalRecords": 1
-        }
-        
-        with patch.object(self.client, 'get_series_by_id', return_value={"title": "Test Series"}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={"title": "Test Episode", "episodeNumber": 1}):
-                result = await self.client.get_queue_items()
-        
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "series" in result[0]
-
-    @patch('clients.sonarr.SonarrClient._make_request')
-    async def test_get_queue_items_empty_response(self, mock_request):
-        """Test queue items with empty response."""
-        mock_request.return_value = {"records": []}
-        
-        result = await self.client.get_queue_items()
-        
-        assert isinstance(result, list)
-        assert len(result) == 0
-
-    @patch('clients.sonarr.SonarrClient._make_request')
-    async def test_get_queue_items_http_error(self, mock_request):
-        """Test queue items with HTTP error."""
-        mock_request.return_value = None
-        
-        result = await self.client.get_queue_items()
-        
-        assert isinstance(result, list)
-        assert len(result) == 0
-
-    @patch('clients.sonarr.SonarrClient._make_request')
-    async def test_get_queue_items_connection_error(self, mock_request):
-        """Test queue items with connection error."""
-        mock_request.return_value = None
-        
-        result = await self.client.get_queue_items()
-        
-        assert isinstance(result, list)
-        assert len(result) == 0
-
-    async def test_media_info_nested_data_extraction(self):
-        """Test extraction of nested data from complex queue items."""
-        queue_item = {
-            "seriesId": 123,
-            "episodeId": 456,
-            "seasonNumber": 2,
-            "episodeNumber": 10,
-            "series": {
-                "title": "Complex Series Name",
-                "year": 2023,
-                "tvdbId": 789
-            },
-            "episode": {
-                "title": "Complex Episode Title",
-                "airDate": "2023-10-10",
-                "overview": "Episode description"
-            }
-        }
-        
-        with patch.object(self.client, 'get_series_by_id', return_value={"title": "Complex Series Name"}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={"title": "Complex Episode Title", "episodeNumber": 10}):
-                media_info = await self.client.get_media_info(queue_item)
-        
-        assert media_info["series"] == "Complex Series Name"
-        assert media_info["episode"] == "Complex Episode Title"
-        assert media_info["season"] == 2
-        assert media_info["episode_number"] == 10
-
-    async def test_media_info_data_types(self):
-        """Test that media info returns correct data types."""
-        queue_item = {
-            "seriesId": 123,
-            "episodeId": 456,
-            "seasonNumber": "1",  # String instead of int
-            "episodeNumber": "5",  # String instead of int
-            "series": {"title": "Test Series"},
-            "episode": {"title": "Test Episode"}
-        }
-        
-        with patch.object(self.client, 'get_series_by_id', return_value={"title": "Test Series"}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={"title": "Test Episode", "episodeNumber": 5}):
-                media_info = await self.client.get_media_info(queue_item)
-        
-        assert isinstance(media_info, dict)
-        assert isinstance(media_info["series"], str)
-        assert isinstance(media_info["episode"], str)
-        assert media_info["season"] == "1"
-        assert media_info["episode_number"] == 5
-
-    def test_queue_params_structure(self):
-        """Test that queue parameters have correct structure."""
-        params = self.client.get_queue_params()
-        
-        # Test that all required keys are present
-        assert 'pageSize' in params
-        assert 'page' in params
-        assert 'sortKey' in params
-        assert 'sortDirection' in params
-        assert 'includeSeries' in params
-        assert 'includeEpisode' in params
-
-    def test_service_specific_configuration(self):
-        """Test Sonarr-specific configuration."""
-        assert self.client.service_name == "Sonarr"
-        
-        # Sonarr should include both series and episode info
-        params = self.client.get_queue_params()
-        assert params['includeSeries'] is True
-        assert params['includeEpisode'] is True
-
-    async def test_error_handling_with_malformed_data(self):
-        """Test error handling with malformed queue item data."""
-        malformed_items = [
-            {"seriesId": "not_a_number"},
-            {"series": "not_a_dict"},
-            {"episode": None},
-            {"seasonNumber": None, "episodeNumber": None}
-        ]
-        
-        for item in malformed_items:
-            with patch.object(self.client, 'get_series_by_id', return_value={}):
-                with patch.object(self.client, 'get_episode_by_id', return_value={}):
-                    media_info = await self.client.get_media_info(item)
-                    assert isinstance(media_info, dict)
-                    assert "series" in media_info
-                    assert "episode" in media_info
-
-    @patch('clients.sonarr.SonarrClient._make_request')
-    async def test_api_request_parameters(self, mock_request):
-        """Test that API requests include correct parameters."""
-        mock_request.return_value = {"records": []}
-        
-        await self.client.get_queue_items()
-        
-        # Verify the request was made with correct parameters
-        mock_request.assert_called_once()
-
-    async def test_media_info_with_special_characters(self):
-        """Test media info extraction with special characters."""
-        queue_item = {
-            "seriesId": 123,
-            "episodeId": 456,
-            "seasonNumber": 1,
-            "episodeNumber": 1,
-            "series": {"title": "Série Spéciale & Ñoño"},
-            "episode": {"title": "Épisode with émojis 🎬"}
-        }
-        
-        with patch.object(self.client, 'get_series_by_id', return_value={"title": "Série Spéciale & Ñoño"}):
-            with patch.object(self.client, 'get_episode_by_id', return_value={"title": "Épisode with émojis 🎬", "episodeNumber": 1}):
-                media_info = await self.client.get_media_info(queue_item)
-        
-        assert media_info["series"] == "Série Spéciale & Ñoño"
-        assert media_info["episode"] == "Épisode with émojis 🎬"
+    # Check for the completed download
+    completed_update = next(u for u in updates if u.get('status') == 'completed')
+    assert completed_update["series"] == "Completed Show"

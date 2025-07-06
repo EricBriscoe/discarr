@@ -127,36 +127,49 @@ class TestDownloadMonitorCleanup:
         mock_channel.purge.assert_called_once()
     
     @pytest.mark.asyncio
-    async def test_cleanup_disabled_in_settings(self, mock_bot, mock_channel):
-        """Test that cleanup is skipped when disabled in settings."""
-        # Setup
-        settings = MagicMock(spec=Settings)
-        settings.cleanup_previous_messages = False
-        settings.discord_channel_id = 67890
-        settings.radarr_url = "http://localhost:7878"
-        settings.radarr_api_key = "test_key"
-        settings.sonarr_url = "http://localhost:8989"
-        settings.sonarr_api_key = "test_key"
-        settings.verbose = False
+    async def test_cleanup_logic_in_start(self, mock_bot, mock_channel):
+        """Test the cleanup logic within the start method."""
+        # Case 1: Cleanup is enabled
+        settings_enabled = MagicMock(spec=Settings)
+        settings_enabled.cleanup_previous_messages = True
+        settings_enabled.discord_channel_id = 123
         
-        with patch('src.monitoring.download_monitor.RadarrClient'), \
-             patch('src.monitoring.download_monitor.SonarrClient'), \
+        with patch('src.monitoring.download_monitor.DownloadMonitor._create_initial_health_message', new_callable=AsyncMock), \
+             patch('src.monitoring.download_monitor.DownloadMonitor._monitor_loop', new_callable=AsyncMock), \
+             patch('src.monitoring.download_monitor.DownloadMonitor._health_monitor_loop', new_callable=AsyncMock), \
              patch('src.monitoring.download_monitor.CacheManager'), \
+             patch('src.monitoring.download_monitor.RadarrClient'), \
+             patch('src.monitoring.download_monitor.SonarrClient'), \
              patch('src.discord_bot.ui.views.PaginationView'):
-            monitor = DownloadMonitor(mock_bot, settings)
-            monitor.channel = mock_channel
-            monitor._cleanup_previous_messages = AsyncMock()
-            
-            # Mock the start method dependencies
-            with patch.object(monitor.cache_manager, 'start_background_refresh'), \
-                 patch('asyncio.create_task'):
-                mock_bot.get_channel.return_value = mock_channel
-                
-                # Execute
-                await monitor.start()
-                
-                # Verify cleanup was not called
-                monitor._cleanup_previous_messages.assert_not_called()
+
+            monitor_enabled = DownloadMonitor(mock_bot, settings_enabled)
+            monitor_enabled.channel = mock_channel
+            monitor_enabled._cleanup_previous_messages = AsyncMock()
+            mock_bot.get_channel.return_value = mock_channel
+
+            await monitor_enabled.start()
+            monitor_enabled._cleanup_previous_messages.assert_called_once()
+
+        # Case 2: Cleanup is disabled
+        settings_disabled = MagicMock(spec=Settings)
+        settings_disabled.cleanup_previous_messages = False
+        settings_disabled.discord_channel_id = 123
+
+        with patch('src.monitoring.download_monitor.DownloadMonitor._create_initial_health_message', new_callable=AsyncMock), \
+             patch('src.monitoring.download_monitor.DownloadMonitor._monitor_loop', new_callable=AsyncMock), \
+             patch('src.monitoring.download_monitor.DownloadMonitor._health_monitor_loop', new_callable=AsyncMock), \
+             patch('src.monitoring.download_monitor.CacheManager'), \
+             patch('src.monitoring.download_monitor.RadarrClient'), \
+             patch('src.monitoring.download_monitor.SonarrClient'), \
+             patch('src.discord_bot.ui.views.PaginationView'):
+
+            monitor_disabled = DownloadMonitor(mock_bot, settings_disabled)
+            monitor_disabled.channel = mock_channel
+            monitor_disabled._cleanup_previous_messages = AsyncMock()
+            mock_bot.get_channel.return_value = mock_channel
+
+            await monitor_disabled.start()
+            monitor_disabled._cleanup_previous_messages.assert_not_called()
     
     def test_is_bot_message_function(self, download_monitor, mock_bot):
         """Test the message filtering function."""

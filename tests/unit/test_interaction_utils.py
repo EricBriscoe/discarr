@@ -254,10 +254,11 @@ class TestHandleInteractionError:
         # Assert - function completes without exception
 
 
+@pytest.mark.asyncio
 class TestPermissionHelpers:
     """Test cases for permission helper functions."""
     
-    def test_has_admin_permissions_success(self):
+    async def test_has_admin_permissions_success(self):
         """Test successful admin permission check."""
         # Arrange
         mock_interaction = Mock(spec=discord.Interaction)
@@ -271,12 +272,12 @@ class TestPermissionHelpers:
         mock_interaction.user = mock_user
         
         # Act
-        result = has_admin_permissions(mock_interaction)
+        result = await has_admin_permissions(mock_interaction)
         
         # Assert
         assert result is True
     
-    def test_has_admin_permissions_no_admin(self):
+    async def test_has_admin_permissions_no_admin(self):
         """Test admin permission check when user is not admin."""
         # Arrange
         mock_interaction = Mock(spec=discord.Interaction)
@@ -292,24 +293,24 @@ class TestPermissionHelpers:
         mock_interaction.user = mock_user
         
         # Act
-        result = has_admin_permissions(mock_interaction)
+        result = await has_admin_permissions(mock_interaction)
         
         # Assert
         assert result is False
     
-    def test_has_admin_permissions_no_guild(self):
+    async def test_has_admin_permissions_no_guild(self):
         """Test admin permission check when not in guild."""
         # Arrange
         mock_interaction = Mock(spec=discord.Interaction)
         mock_interaction.guild = None
         
         # Act
-        result = has_admin_permissions(mock_interaction)
+        result = await has_admin_permissions(mock_interaction)
         
         # Assert
         assert result is False
     
-    def test_has_admin_permissions_fallback_to_owner(self):
+    async def test_has_admin_permissions_fallback_to_owner(self):
         """Test admin permission check falls back to owner check."""
         # Arrange
         mock_interaction = Mock(spec=discord.Interaction)
@@ -324,12 +325,12 @@ class TestPermissionHelpers:
         mock_interaction.user = mock_user
         
         # Act
-        result = has_admin_permissions(mock_interaction)
+        result = await has_admin_permissions(mock_interaction)
         
         # Assert
         assert result is True
     
-    def test_is_guild_owner_success(self):
+    async def test_is_guild_owner_success(self):
         """Test successful guild owner check."""
         # Arrange
         mock_interaction = Mock(spec=discord.Interaction)
@@ -342,12 +343,12 @@ class TestPermissionHelpers:
         mock_interaction.user = mock_user
         
         # Act
-        result = is_guild_owner(mock_interaction)
+        result = await is_guild_owner(mock_interaction)
         
         # Assert
         assert result is True
     
-    def test_is_guild_owner_not_owner(self):
+    async def test_is_guild_owner_not_owner(self):
         """Test guild owner check when user is not owner."""
         # Arrange
         mock_interaction = Mock(spec=discord.Interaction)
@@ -360,19 +361,19 @@ class TestPermissionHelpers:
         mock_interaction.user = mock_user
         
         # Act
-        result = is_guild_owner(mock_interaction)
+        result = await is_guild_owner(mock_interaction)
         
         # Assert
         assert result is False
     
-    def test_is_guild_owner_no_guild(self):
+    async def test_is_guild_owner_no_guild(self):
         """Test guild owner check when not in guild."""
         # Arrange
         mock_interaction = Mock(spec=discord.Interaction)
         mock_interaction.guild = None
         
         # Act
-        result = is_guild_owner(mock_interaction)
+        result = await is_guild_owner(mock_interaction)
         
         # Assert
         assert result is False

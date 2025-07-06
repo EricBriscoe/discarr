@@ -37,7 +37,7 @@ class HealthChecker:
             response_time = time.time() - start_time
             
             if response.status_code == 200:
-                data = response.json()
+                data = await response.json()
                 self.health_status['radarr'] = {
                     'status': 'online',
                     'last_check': datetime.now(),
@@ -73,7 +73,7 @@ class HealthChecker:
             response_time = time.time() - start_time
             
             if response.status_code == 200:
-                data = response.json()
+                data = await response.json()
                 self.health_status['sonarr'] = {
                     'status': 'online',
                     'last_check': datetime.now(),
