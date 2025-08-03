@@ -1,224 +1,89 @@
 # Discarr
 
-[![CI/CD Pipeline](https://github.com/EricBriscoe/discarr/actions/workflows/ci.yml/badge.svg)](https://github.com/EricBriscoe/discarr/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/EricBriscoe/discarr/branch/main/graph/badge.svg)](https://codecov.io/gh/EricBriscoe/discarr)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+A Discord bot for monitoring and managing your Radarr and Sonarr instances.
 
-A powerful Discord bot for monitoring and managing your Radarr and Sonarr instances. Discarr provides real-time notifications, download monitoring, and interactive management capabilities directly through Discord.
+## Requirements
 
-## ✨ Features
-
-- **Real-time Monitoring**: Track downloads, health status, and system performance
-- **Interactive Commands**: Manage your media servers directly from Discord
-- **Smart Notifications**: Customizable alerts for downloads, errors, and system events
-- **Multi-Instance Support**: Monitor multiple Radarr and Sonarr instances
-- **Health Checking**: Automated health monitoring with configurable intervals
-- **Cache Management**: Efficient caching system for improved performance
-- **Progress Tracking**: Visual progress indicators for ongoing downloads
-- **Security**: Built-in security scanning and safe configuration handling
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Python 3.12 or higher
+- Python 3.12+
 - Discord Bot Token
-- Radarr and/or Sonarr instances with API access
+- Radarr and/or Sonarr with API access
 
-### Installation
+## Quick Start
 
-1. **Clone the repository**
+### Python (Local)
+
+1. **Clone and install**
    ```bash
    git clone https://github.com/EricBriscoe/discarr.git
    cd discarr
-   ```
-
-2. **Install dependencies**
-   ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure environment**
+2. **Configure**
    ```bash
    cp .env.example .env
-   # Edit .env with your configuration
+   # Edit .env with your settings
    ```
 
-4. **Run the bot**
+3. **Run**
    ```bash
-   python src/main.py
+   python bot.py
    ```
 
-### Docker Deployment
+### Docker
 
-```bash
-# Using docker-compose
-docker-compose up -d
+1. **Setup configuration**
+   ```bash
+   git clone https://github.com/EricBriscoe/discarr.git
+   cd discarr
+   cp .env.example config/.env
+   # Edit config/.env with your settings
+   ```
 
-# Or build and run manually
-docker build -t discarr .
-docker run -d --env-file .env discarr
-```
+2. **Run with Docker Compose**
+   ```bash
+   docker-compose up -d
+   ```
 
-## ⚙️ Configuration
+   **Or run manually**
+   ```bash
+   docker build -t discarr .
+   docker run -d --env-file config/.env discarr
+   ```
 
-Create a `.env` file based on `.env.example`:
+## Configuration
+
+Edit `.env` (local) or `config/.env` (Docker) with your settings:
 
 ```env
-# Discord Configuration
+# Discord
 DISCORD_TOKEN=your_discord_bot_token
-DISCORD_GUILD_ID=your_guild_id
+DISCORD_CHANNEL_ID=your_channel_id
 
-# Radarr Configuration
+# Radarr
 RADARR_URL=http://localhost:7878
 RADARR_API_KEY=your_radarr_api_key
 
-# Sonarr Configuration
+# Sonarr  
 SONARR_URL=http://localhost:8989
 SONARR_API_KEY=your_sonarr_api_key
 
-# Optional Settings
+# Plex (optional)
+PLEX_URL=http://localhost:32400
+
+# Settings
+CHECK_INTERVAL=300
 VERBOSE=false
-HEALTH_CHECK_INTERVAL=300
-CACHE_TTL=3600
 ```
 
-## 🧪 Development
+## Commands
 
-### Running Tests
+- `/health` - Check service health status
+- `/check` - Manually refresh downloads
+- `/progress` - Show progress statistics (admin)
+- `/cleanup` - Remove stuck downloads (admin)
+- `/verbose` - Toggle verbose logging (admin)
 
-```bash
-# Run all tests
-python run_tests.py
+## License
 
-# Run unit tests only
-python run_tests.py tests/unit/
-
-# Run integration tests only
-python run_tests.py tests/integration/
-
-# Run tests with coverage
-python run_tests.py tests/unit/ --cov=src --cov-report=html
-```
-
-### Code Coverage
-
-Generate and view coverage reports:
-
-```bash
-# Generate coverage report
-python run_tests.py tests/unit/ --cov=src --cov-report=html --cov-report=term-missing
-
-# View HTML coverage report
-open htmlcov/index.html
-```
-
-### Code Quality
-
-The project uses several tools to maintain code quality:
-
-- **pytest**: Testing framework
-- **flake8**: Code linting
-- **safety**: Security vulnerability scanning
-- **bandit**: Security static analysis
-
-```bash
-# Run linting
-flake8 src --max-line-length=127
-
-# Run security checks
-safety check -r requirements.txt
-bandit -r src/
-```
-
-## 📊 Project Structure
-
-```
-discarr/
-├── src/                    # Source code
-│   ├── clients/           # API clients for Radarr/Sonarr
-│   ├── core/              # Core configuration and settings
-│   ├── discord_bot/       # Discord bot implementation
-│   ├── monitoring/        # Monitoring and health checking
-│   └── utils/             # Utility functions
-├── tests/                 # Test suite
-│   ├── unit/              # Unit tests
-│   └── integration/       # Integration tests
-├── .github/workflows/     # CI/CD pipelines
-└── config/                # Configuration files
-```
-
-## 🤖 Bot Commands
-
-### User Commands
-- `/status` - Show system status
-- `/downloads` - View active downloads
-- `/search <query>` - Search for media
-- `/help` - Show available commands
-
-### Admin Commands
-- `/health` - Detailed health check
-- `/cache clear` - Clear system cache
-- `/config reload` - Reload configuration
-- `/logs` - View recent logs
-
-## 🔧 Architecture
-
-Discarr is built with a modular architecture:
-
-- **Clients**: Abstracted API clients for different services
-- **Monitoring**: Background tasks for health and download monitoring
-- **Discord Bot**: Command handling and user interaction
-- **Utils**: Shared utilities for common operations
-
-## 📈 Monitoring & Observability
-
-- **Health Checks**: Automated monitoring of service availability
-- **Progress Tracking**: Real-time download progress updates
-- **Cache Management**: Intelligent caching with TTL support
-- **Error Handling**: Comprehensive error tracking and reporting
-
-## 🛡️ Security
-
-- Environment-based configuration
-- API key protection
-- Input validation and sanitization
-- Regular security scanning with Bandit and Safety
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests (`python run_tests.py`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-### Development Guidelines
-
-- Write tests for new features
-- Maintain code coverage above 65%
-- Follow PEP 8 style guidelines
-- Update documentation for API changes
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [discord.py](https://github.com/Rapptz/discord.py) - Discord API wrapper
-- [httpx](https://github.com/encode/httpx) - HTTP client
-- [pytest](https://github.com/pytest-dev/pytest) - Testing framework
-
-## 📞 Support
-
-- Create an [issue](https://github.com/EricBriscoe/discarr/issues) for bug reports
-- Start a [discussion](https://github.com/EricBriscoe/discarr/discussions) for questions
-- Check the [wiki](https://github.com/EricBriscoe/discarr/wiki) for documentation
-
----
-
-**Made with ❤️ for the Radarr and Sonarr community**
+MIT
