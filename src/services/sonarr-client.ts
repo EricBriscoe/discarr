@@ -30,15 +30,21 @@ export class SonarrClient extends BaseClient {
 
   async getActiveDownloads(): Promise<TVDownloadItem[]> {
     try {
-      const response = await this.makeRequest<{ records: any[] }>('/api/v3/queue', {
-        pageSize: 50,
+      // Use pagination to get ALL queue items
+      const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
         includeUnknownSeriesItems: false,
+        sortKey: 'timeleft',
+        sortDirection: 'ascending',
+        includeSeries: true,
+        includeEpisode: true
       });
 
+      if (this.verbose) {
+        console.log(`Processing ${allRecords.length} Sonarr queue items`);
+      }
+
       const downloads = await Promise.all(
-        response.records
-          .filter(item => item.status === 'downloading' || item.status === 'queued')
-          .map(item => this.processQueueItem(item))
+        allRecords.map(item => this.processQueueItem(item))
       );
 
       return downloads.sort((a, b) => b.progress - a.progress);
@@ -51,7 +57,7 @@ export class SonarrClient extends BaseClient {
   }
 
   private async processQueueItem(item: any): Promise<TVDownloadItem> {
-    const progress = item.sizeleft && item.size && item.size > 0
+    const progress = item.size && item.size > 0 && typeof item.sizeleft === 'number'
       ? 100 * (1 - item.sizeleft / item.size)
       : item.progress || 0;
 
@@ -126,5 +132,65 @@ export class SonarrClient extends BaseClient {
       season: seasonNumber,
       episode: episodeNumber,
     };
+  }
+
+  async getImportBlockedItems(): Promise<{id: number, title: string}[]> {
+    try {
+      const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
+        includeUnknownSeriesItems: false,
+        includeSeries: true,
+        includeEpisode: true
+      });
+
+      const blockedItems = allRecords.filter(item => 
+        (item.trackedDownloadState || item.status) === 'importBlocked'
+      );
+
+      // Get titles for blocked items
+      const itemsWithTitles = await Promise.all(
+        blockedItems.map(async (item) => {
+          const mediaInfo = await this.getMediaInfo(item);
+          return {
+            id: item.id,
+            title: `${mediaInfo.series} - S${mediaInfo.season.toString().padStart(2, '0')}E${mediaInfo.episode.toString().padStart(2, '0')}`
+          };
+        })
+      );
+
+      return itemsWithTitles;
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to fetch Sonarr importBlocked items:', error);
+      }
+      return [];
+    }
+  }
+
+  async removeQueueItems(itemIds: number[]): Promise<{id: number, success: boolean, error?: string}[]> {
+    const results = await Promise.allSettled(
+      itemIds.map(async (id) => {
+        try {
+          await this.makeRequest(`/api/v3/queue/${id}`, 'DELETE', undefined, {
+            removeFromClient: true,
+            blocklist: false
+          });
+          return { id, success: true };
+        } catch (error) {
+          return { 
+            id, 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      })
+    );
+
+    return results.map(result => 
+      result.status === 'fulfilled' ? result.value : { 
+        id: 0, 
+        success: false, 
+        error: 'Promise rejected' 
+      }
+    );
   }
 }

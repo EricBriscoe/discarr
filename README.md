@@ -1,22 +1,22 @@
 # Discarr
 
-A Discord bot for monitoring and managing your Radarr and Sonarr instances.
+A Discord bot for monitoring Radarr, Sonarr, and Plex instances with real-time download tracking.
 
 ## Requirements
 
-- Python 3.12+
-- Discord Bot Token
+- Node.js 18+
+- Discord Bot Token & Client ID
 - Radarr and/or Sonarr with API access
 
 ## Quick Start
 
-### Python (Local)
+### Node.js (Local)
 
 1. **Clone and install**
    ```bash
    git clone https://github.com/EricBriscoe/discarr.git
    cd discarr
-   pip install -r requirements.txt
+   npm install
    ```
 
 2. **Configure**
@@ -25,9 +25,10 @@ A Discord bot for monitoring and managing your Radarr and Sonarr instances.
    # Edit .env with your settings
    ```
 
-3. **Run**
+3. **Build and run**
    ```bash
-   python bot.py
+   npm run build
+   npm start
    ```
 
 ### Docker
@@ -45,12 +46,6 @@ A Discord bot for monitoring and managing your Radarr and Sonarr instances.
    docker-compose up -d
    ```
 
-   **Or run manually**
-   ```bash
-   docker build -t discarr .
-   docker run -d --env-file config/.env discarr
-   ```
-
 ## Configuration
 
 Edit `.env` (local) or `config/.env` (Docker) with your settings:
@@ -59,6 +54,7 @@ Edit `.env` (local) or `config/.env` (Docker) with your settings:
 # Discord
 DISCORD_TOKEN=your_discord_bot_token
 DISCORD_CHANNEL_ID=your_channel_id
+DISCORD_CLIENT_ID=your_client_id
 
 # Radarr
 RADARR_URL=http://localhost:7878
@@ -73,16 +69,13 @@ PLEX_URL=http://localhost:32400
 
 # Settings
 CHECK_INTERVAL=300
+HEALTH_CHECK_INTERVAL=60
 VERBOSE=false
 ```
 
 ## Commands
 
-- `/health` - Check service health status
-- `/check` - Manually refresh downloads
-- `/progress` - Show progress statistics (admin)
-- `/cleanup` - Remove stuck downloads (admin)
-- `/verbose` - Toggle verbose logging (admin)
+- `/cleanup` - Remove all importBlocked items from Radarr and Sonarr queues
 
 ## License
 

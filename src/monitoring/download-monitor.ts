@@ -42,10 +42,9 @@ export class DownloadMonitor {
         }
       });
 
-      // Sort by progress (highest first) and take top downloads
+      // Sort by progress (highest first) - no limiting for pagination
       const sortedDownloads = allDownloads
-        .sort((a, b) => b.progress - a.progress)
-        .slice(0, 20); // Limit to top 20 downloads
+        .sort((a, b) => b.progress - a.progress);
 
       const movies = sortedDownloads.filter(item => item.service === 'radarr') as MovieDownloadItem[];
       const tv = sortedDownloads.filter(item => item.service === 'sonarr') as TVDownloadItem[];
