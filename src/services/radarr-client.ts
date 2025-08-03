@@ -71,6 +71,40 @@ export class RadarrClient extends BaseClient {
     }
   }
 
+  async getStuckDownloads(): Promise<{id: number, title: string}[]> {
+    try {
+      const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
+        includeUnknownMovieItems: false,
+        includeMovie: true
+      });
+
+      return allRecords
+        .filter(item => {
+          // Check for infinite time remaining (no estimatedCompletionTime and no timeleft)
+          const hasInfiniteTime = !item.estimatedCompletionTime && (!item.timeleft || item.timeleft === '∞');
+          
+          // Check if download has some progress (started but stuck)
+          const progress = item.size && item.size > 0 && typeof item.sizeleft === 'number'
+            ? 100 * (1 - item.sizeleft / item.size)
+            : item.progress || 0;
+          
+          const hasProgress = progress > 0;
+          
+          // Only include items that are stuck (infinite time) but have started (have progress)
+          return hasInfiniteTime && hasProgress;
+        })
+        .map(item => ({
+          id: item.id,
+          title: item.title || 'Unknown Movie'
+        }));
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to fetch Radarr stuck downloads:', error);
+      }
+      return [];
+    }
+  }
+
   async removeQueueItems(itemIds: number[]): Promise<{id: number, success: boolean, error?: string}[]> {
     const results = await Promise.allSettled(
       itemIds.map(async (id) => {

@@ -4,6 +4,7 @@ import { DownloadMonitor } from './monitoring/download-monitor';
 import { DiscordEmbedBuilder } from './discord/embed-builder';
 import { DownloadView } from './discord/download-view';
 import { CleanupCommand } from './discord/commands';
+import { QBittorrentClient } from './services/qbittorrent-client.js';
 import config from './config';
 
 export class DiscarrBot {
@@ -25,10 +26,18 @@ export class DiscarrBot {
     this.healthMonitor = new HealthMonitor();
     this.downloadMonitor = new DownloadMonitor(this.healthMonitor);
     this.downloadView = new DownloadView();
-    this.cleanupCommand = new CleanupCommand(
-      this.healthMonitor.getRadarrClient()!,
-      this.healthMonitor.getSonarrClient()!
-    );
+    
+    if (!config.services.qbittorrent) {
+      throw new Error('qBittorrent configuration is required for cleanup command');
+    }
+    
+    const qbittorrentClient = new QBittorrentClient({
+      baseUrl: config.services.qbittorrent.url,
+      username: config.services.qbittorrent.username,
+      password: config.services.qbittorrent.password
+    });
+    
+    this.cleanupCommand = new CleanupCommand(qbittorrentClient);
 
     this.setupEventHandlers();
   }

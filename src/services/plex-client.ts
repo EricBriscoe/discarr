@@ -1,10 +1,5 @@
 import { BaseClient } from './base-client';
 import { ServiceStatus } from '../types';
-import { parseString } from 'xml2js';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
 
 export class PlexClient extends BaseClient {
   private baseURL: string;
@@ -18,37 +13,19 @@ export class PlexClient extends BaseClient {
     const startTime = Date.now();
     
     try {
-      // First try the normal axios request
-      try {
-        const xmlResponse = await this.makeRequest<string>('/identity');
-        const responseTime = Date.now() - startTime;
-        
-        // Parse XML response
-        const parsedData = await new Promise<any>((resolve, reject) => {
-          parseString(xmlResponse, (err, result) => {
-            if (err) reject(err);
-            else resolve(result);
-          });
-        });
-
-        const mediaContainer = parsedData?.MediaContainer?.$;
-        const version = mediaContainer?.version || 'Unknown';
-        
+      const htmlResponse = await this.makeRequest<string>('/web/index.html');
+      const responseTime = Date.now() - startTime;
+      
+      // Check if response contains Plex identifier
+      if (htmlResponse && htmlResponse.includes('Plex')) {
         return {
           status: 'online',
           lastCheck: new Date(),
           responseTime,
-          version,
+          version: 'Running',
         };
-      } catch (axiosError: any) {
-        // If axios fails with EHOSTUNREACH, try curl as fallback
-        if (axiosError.code === 'EHOSTUNREACH') {
-          if (this.verbose) {
-            console.log('Axios failed, attempting curl fallback for Plex...');
-          }
-          return await this.checkHealthWithCurl(startTime);
-        }
-        throw axiosError;
+      } else {
+        throw new Error('Invalid Plex response');
       }
     } catch (error: any) {
       let errorMessage = error.message;
@@ -66,46 +43,6 @@ export class PlexClient extends BaseClient {
         responseTime: Date.now() - startTime,
         error: errorMessage,
       };
-    }
-  }
-
-  private async checkHealthWithCurl(startTime: number): Promise<ServiceStatus> {
-    try {
-      const curlCommand = `curl -s --max-time 10 "${this.baseURL}/identity"`;
-      const { stdout, stderr } = await execAsync(curlCommand);
-      
-      if (stderr && stderr.includes('connect')) {
-        throw new Error('Curl connection failed: ' + stderr);
-      }
-      
-      const responseTime = Date.now() - startTime;
-      
-      // Parse XML response from curl
-      const parsedData = await new Promise<any>((resolve, reject) => {
-        parseString(stdout, (err, result) => {
-          if (err) reject(err);
-          else resolve(result);
-        });
-      });
-
-      const mediaContainer = parsedData?.MediaContainer?.$;
-      const version = mediaContainer?.version || 'Unknown';
-      
-      if (this.verbose) {
-        console.log('✅ Plex health check successful via curl fallback');
-      }
-      
-      return {
-        status: 'online',
-        lastCheck: new Date(),
-        responseTime,
-        version,
-      };
-    } catch (curlError: any) {
-      if (this.verbose) {
-        console.log('❌ Curl fallback also failed:', curlError.message);
-      }
-      throw curlError;
     }
   }
 }

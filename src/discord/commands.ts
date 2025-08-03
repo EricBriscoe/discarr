@@ -3,8 +3,7 @@ import {
   CommandInteraction, 
   EmbedBuilder 
 } from 'discord.js';
-import { RadarrClient } from '../services/radarr-client';
-import { SonarrClient } from '../services/sonarr-client';
+import { QBittorrentClient } from '../services/qbittorrent-client.js';
 
 export interface SlashCommand {
   data: SlashCommandBuilder;
@@ -14,14 +13,12 @@ export interface SlashCommand {
 export class CleanupCommand implements SlashCommand {
   data = new SlashCommandBuilder()
     .setName('cleanup')
-    .setDescription('Remove all importBlocked items from Radarr and Sonarr queues');
+    .setDescription('Remove seeding/stalled/stuck torrents with sonarr/radarr labels from qBittorrent');
 
-  private radarrClient: RadarrClient;
-  private sonarrClient: SonarrClient;
+  private qbittorrentClient: QBittorrentClient;
 
-  constructor(radarrClient: RadarrClient, sonarrClient: SonarrClient) {
-    this.radarrClient = radarrClient;
-    this.sonarrClient = sonarrClient;
+  constructor(qbittorrentClient: QBittorrentClient) {
+    this.qbittorrentClient = qbittorrentClient;
   }
 
   async execute(interaction: CommandInteraction): Promise<void> {
@@ -30,69 +27,83 @@ export class CleanupCommand implements SlashCommand {
     try {
       const embed = new EmbedBuilder()
         .setTitle('🧹 Cleanup in Progress')
-        .setDescription('Scanning for importBlocked items...')
+        .setDescription('Scanning qBittorrent for seeding/stalled/stuck torrents with sonarr/radarr labels...')
         .setColor(0xffaa00)
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
 
-      // Get all importBlocked items from both services
-      const [radarrBlocked, sonarrBlocked] = await Promise.all([
-        this.radarrClient.getImportBlockedItems(),
-        this.sonarrClient.getImportBlockedItems()
-      ]);
+      // Get torrents to remove from qBittorrent
+      const torrentsToRemove = await this.qbittorrentClient.getSeedinOrStalledTorrentsWithLabels();
 
-      if (radarrBlocked.length === 0 && sonarrBlocked.length === 0) {
+      if (torrentsToRemove.length === 0) {
         embed
           .setTitle('🧹 Cleanup Complete')
-          .setDescription('No importBlocked items found.')
+          .setDescription('No seeding/stalled/stuck torrents with sonarr/radarr labels found.')
           .setColor(0x00ff00);
         
         await interaction.editReply({ embeds: [embed] });
+
+        // Delete the no-items message after 3 seconds
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.error('Failed to delete cleanup message:', error);
+          }
+        }, 3000);
         return;
       }
 
       // Update embed with found items
+      let updateDescription = `Found ${torrentsToRemove.length} torrent${torrentsToRemove.length !== 1 ? 's' : ''} to clean up:\n`;
+      updateDescription += torrentsToRemove.slice(0, 5).map(t => `• ${t.name} (${t.category}/${t.state})`).join('\n');
+      if (torrentsToRemove.length > 5) {
+        updateDescription += `\n• ...and ${torrentsToRemove.length - 5} more`;
+      }
+      updateDescription += `\n\nRemoving from qBittorrent and disk...`;
+
       embed
-        .setDescription(`Found ${radarrBlocked.length} Radarr and ${sonarrBlocked.length} Sonarr importBlocked items.\nRemoving...`)
+        .setDescription(updateDescription)
         .setColor(0xff6600);
 
       await interaction.editReply({ embeds: [embed] });
 
-      // Remove all blocked items
-      const [radarrResults, sonarrResults] = await Promise.all([
-        this.radarrClient.removeQueueItems(radarrBlocked.map(item => item.id)),
-        this.sonarrClient.removeQueueItems(sonarrBlocked.map(item => item.id))
-      ]);
+      // Remove torrents from qBittorrent
+      const results = await this.qbittorrentClient.deleteTorrents(
+        torrentsToRemove.map(t => t.hash), 
+        true // Delete files from disk
+      );
 
       // Calculate success/failure counts
-      const radarrSuccess = radarrResults.filter(r => r.success).length;
-      const radarrFailed = radarrResults.length - radarrSuccess;
-      const sonarrSuccess = sonarrResults.filter(r => r.success).length;
-      const sonarrFailed = sonarrResults.length - sonarrSuccess;
+      const successful = results.filter(r => r.success).length;
+      const failed = results.length - successful;
 
       // Create final result embed
       const resultEmbed = new EmbedBuilder()
         .setTitle('🧹 Cleanup Complete')
         .setTimestamp()
-        .setColor(radarrFailed === 0 && sonarrFailed === 0 ? 0x00ff00 : 0xff6600);
+        .setColor(failed === 0 ? 0x00ff00 : 0xff6600);
 
-      let description = '';
-      if (radarrSuccess > 0) {
-        description += `✅ Removed ${radarrSuccess} Radarr item${radarrSuccess !== 1 ? 's' : ''}\n`;
+      let resultDescription = '';
+      if (successful > 0) {
+        resultDescription += `✅ Removed ${successful} torrent${successful !== 1 ? 's' : ''} from qBittorrent and disk\n`;
       }
-      if (sonarrSuccess > 0) {
-        description += `✅ Removed ${sonarrSuccess} Sonarr item${sonarrSuccess !== 1 ? 's' : ''}\n`;
-      }
-      if (radarrFailed > 0) {
-        description += `❌ Failed to remove ${radarrFailed} Radarr item${radarrFailed !== 1 ? 's' : ''}\n`;
-      }
-      if (sonarrFailed > 0) {
-        description += `❌ Failed to remove ${sonarrFailed} Sonarr item${sonarrFailed !== 1 ? 's' : ''}\n`;
+      if (failed > 0) {
+        resultDescription += `❌ Failed to remove ${failed} torrent${failed !== 1 ? 's' : ''}\n`;
       }
 
-      resultEmbed.setDescription(description.trim());
+      resultEmbed.setDescription(resultDescription.trim());
       await interaction.editReply({ embeds: [resultEmbed] });
+
+      // Delete the cleanup message after 5 seconds to keep channel clean
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete cleanup message:', error);
+        }
+      }, 5000);
 
     } catch (error) {
       console.error('Cleanup command error:', error);
@@ -104,6 +115,15 @@ export class CleanupCommand implements SlashCommand {
         .setTimestamp();
 
       await interaction.editReply({ embeds: [errorEmbed] });
+
+      // Delete error message after 10 seconds
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete cleanup error message:', error);
+        }
+      }, 10000);
     }
   }
 }
