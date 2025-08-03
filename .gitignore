@@ -30,6 +30,7 @@ var/
 # Coverage reports
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 .tox/
 .pytest_cache/
@@ -45,6 +46,9 @@ logs/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Claude Code
+.claude/
 
 # Runtime data
 pids
