@@ -20,6 +20,11 @@ export interface Config {
     plex?: {
       url: string;
     };
+    qbittorrent?: {
+      url: string;
+      username: string;
+      password: string;
+    };
   };
   monitoring: {
     checkInterval: number;
@@ -59,6 +64,13 @@ function getConfig(): Config {
       ...(process.env.PLEX_URL && {
         plex: {
           url: process.env.PLEX_URL,
+        },
+      }),
+      ...(process.env.QBITTORRENT_URL && process.env.QBITTORRENT_USERNAME && process.env.QBITTORRENT_PASSWORD && {
+        qbittorrent: {
+          url: process.env.QBITTORRENT_URL,
+          username: process.env.QBITTORRENT_USERNAME,
+          password: process.env.QBITTORRENT_PASSWORD,
         },
       }),
     },
