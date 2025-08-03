@@ -5,7 +5,7 @@ Commands that require administrator permissions.
 import logging
 import discord
 import asyncio
-from utils.interaction_utils import safe_defer_interaction, safe_send_response, handle_interaction_error, has_admin_permissions, is_guild_owner
+from src.utils.interaction_utils import safe_defer_interaction, safe_send_response, handle_interaction_error, has_admin_permissions, is_guild_owner
 
 logger = logging.getLogger(__name__)
 

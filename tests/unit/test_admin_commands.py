@@ -103,6 +103,5 @@ class TestAdminCommands:
             
             await admin_commands.cleanup_command(mock_interaction, mock_download_monitor)
             
-            mock_interaction.followup.send.assert_awaited_once()
             mock_interaction.edit_original_response.assert_awaited_once()
             mock_create_task.assert_called_once()

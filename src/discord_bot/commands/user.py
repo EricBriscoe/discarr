@@ -4,7 +4,7 @@ Commands that regular users can execute.
 """
 import logging
 import discord
-from utils.interaction_utils import safe_defer_interaction, safe_send_response, handle_interaction_error
+from src.utils.interaction_utils import safe_defer_interaction, safe_send_response, handle_interaction_error
 
 logger = logging.getLogger(__name__)
 
