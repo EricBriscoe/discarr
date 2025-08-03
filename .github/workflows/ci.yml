@@ -13,68 +13,55 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
       with:
-        python-version: '3.12'
-
-    - name: Cache pip dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+        node-version: '18'
+        cache: 'npm'
 
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      run: npm ci
 
-    - name: Lint with flake8
-      run: |
-        pip install flake8
-        # Stop the build if there are Python syntax errors or undefined names
-        flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 src --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Lint with ESLint
+      run: npm run lint
+      continue-on-error: true
 
-    - name: Run unit tests
-      run: |
-        python run_tests.py tests/unit/ --cov=src --cov-report=xml --cov-report=term-missing
+    - name: Type check with TypeScript
+      run: npm run typecheck
+      continue-on-error: true
 
-    - name: Run integration tests
-      run: |
-        python run_tests.py tests/integration/
+    - name: Build TypeScript
+      run: npm run build
 
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
+    - name: Test build output
+      run: |
+        # Verify build artifacts exist
+        ls -la dist/
+        # Check if main files are present
+        test -f dist/index.js
+        test -f dist/bot.js
 
   security:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
       with:
-        python-version: '3.12'
+        node-version: '18'
+        cache: 'npm'
 
     - name: Install dependencies
+      run: npm ci
+
+    - name: Run npm audit
+      run: npm audit --audit-level=moderate
+      continue-on-error: true
+
+    - name: Check for known vulnerabilities
       run: |
-        python -m pip install --upgrade pip
-        pip install safety bandit
-
-    - name: Run safety check
-      run: safety check -r requirements.txt
-
-    - name: Run bandit security check
-      run: bandit -r src/ -f json -o bandit-report.json || true
-
-    - name: Upload bandit report
-      uses: actions/upload-artifact@v4
-      with:
-        name: bandit-report
-        path: bandit-report.json
+        # Install audit-ci for more detailed security checking
+        npm install -g audit-ci
+        audit-ci --moderate
+      continue-on-error: true

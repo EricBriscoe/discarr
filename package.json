@@ -9,6 +9,7 @@
     "dev": "tsx src/index.ts",
     "watch": "tsx watch src/index.ts",
     "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write src/**/*.ts"
   },
   "keywords": [
