@@ -205,27 +205,61 @@ export class CalendarCommand implements SlashCommand {
 
         description += `\n**${dateLabel}**\n`;
 
-        for (const episode of dayEpisodes.slice(0, maxEpisodes - totalShown)) {
-          const hasFileIcon = episode.hasFile ? '✅' : '📺';
-          const monitorIcon = episode.monitored ? '' : '🔇';
-          const time = episode.airDateUtc ? new Date(episode.airDateUtc).toLocaleTimeString('en-US', { 
+        // Group episodes by series
+        const episodesBySeries = new Map<string, typeof dayEpisodes>();
+        dayEpisodes.forEach(episode => {
+          const key = `${episode.seriesTitle}|${episode.network || 'Unknown'}`;
+          if (!episodesBySeries.has(key)) {
+            episodesBySeries.set(key, []);
+          }
+          episodesBySeries.get(key)!.push(episode);
+        });
+
+        for (const [seriesKey, seriesEpisodes] of episodesBySeries) {
+          if (totalShown >= maxEpisodes) break;
+          
+          const [seriesTitle, network] = seriesKey.split('|');
+          const firstEpisode = seriesEpisodes[0];
+          const hasFileIcon = seriesEpisodes.every(ep => ep.hasFile) ? '✅' : 
+                             seriesEpisodes.some(ep => ep.hasFile) ? '🔄' : '📺';
+          const monitorIcon = seriesEpisodes.some(ep => !ep.monitored) ? '🔇' : '';
+          const time = firstEpisode.airDateUtc ? new Date(firstEpisode.airDateUtc).toLocaleTimeString('en-US', { 
             hour: 'numeric', 
             minute: '2-digit',
             timeZoneName: 'short'
           }) : '';
-          
-          description += `${hasFileIcon}${monitorIcon} **${episode.seriesTitle}** S${episode.seasonNumber.toString().padStart(2, '0')}E${episode.episodeNumber.toString().padStart(2, '0')}`;
-          if (episode.title && episode.title !== 'TBA') {
-            description += ` - ${episode.title}`;
+
+          if (seriesEpisodes.length === 1) {
+            // Single episode - show episode details
+            const episode = seriesEpisodes[0];
+            description += `${hasFileIcon}${monitorIcon} **${seriesTitle}** S${episode.seasonNumber.toString().padStart(2, '0')}E${episode.episodeNumber.toString().padStart(2, '0')}`;
+            if (episode.title && episode.title !== 'TBA') {
+              description += ` - ${episode.title}`;
+            }
+            if (time) {
+              description += ` (${time})`;
+            }
+            if (network !== 'Unknown') {
+              description += ` • ${network}`;
+            }
+            description += '\n';
+            totalShown++;
+          } else {
+            // Multiple episodes - show range
+            const sortedEpisodes = seriesEpisodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
+            const firstEp = sortedEpisodes[0];
+            const lastEp = sortedEpisodes[sortedEpisodes.length - 1];
+            
+            description += `${hasFileIcon}${monitorIcon} **${seriesTitle}** S${firstEp.seasonNumber.toString().padStart(2, '0')}E${firstEp.episodeNumber.toString().padStart(2, '0')}-E${lastEp.episodeNumber.toString().padStart(2, '0')} (${seriesEpisodes.length} episodes)`;
+            if (time) {
+              description += ` (${time})`;
+            }
+            if (network !== 'Unknown') {
+              description += ` • ${network}`;
+            }
+            description += '\n';
+            totalShown += seriesEpisodes.length;
           }
-          if (time) {
-            description += ` (${time})`;
-          }
-          if (episode.network) {
-            description += ` • ${episode.network}`;
-          }
-          description += '\n';
-          totalShown++;
         }
       }
 
@@ -234,7 +268,7 @@ export class CalendarCommand implements SlashCommand {
       }
 
       embed.setDescription(description);
-      embed.setFooter({ text: '✅ Downloaded • 📺 Airing • 🔇 Unmonitored' });
+      embed.setFooter({ text: '✅ Downloaded • 🔄 Partially Downloaded • 📺 Airing • 🔇 Unmonitored' });
 
       await interaction.editReply({ embeds: [embed] });
 
