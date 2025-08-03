@@ -6,13 +6,16 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NPM_CONFIG_CACHE=/tmp/.npm
 
-# Install dependencies
+# Install all dependencies (including devDependencies for build)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy source code and build
 COPY . .
 RUN npm run build
+
+# Remove devDependencies after build
+RUN npm ci --only=production && npm cache clean --force
 
 # Create a volume mount point for persistent data (backward compatibility)
 VOLUME ["/app/config"]
