@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, TextChannel, Message, Interaction, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, TextChannel, Message, Interaction, REST, Routes, StringSelectMenuInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
 import { HealthMonitor } from './monitoring/health-monitor';
 import { DownloadMonitor } from './monitoring/download-monitor';
 import { DiscordEmbedBuilder } from './discord/embed-builder';
@@ -84,6 +84,14 @@ export class DiscarrBot {
           }
         } catch (error) {
           console.error('❌ Error handling button interaction:', error);
+        }
+      } else if (interaction.isStringSelectMenu()) {
+        try {
+          if (interaction.customId.startsWith('search_series_')) {
+            await this.handleSeriesSearchMenu(interaction);
+          }
+        } catch (error) {
+          console.error('❌ Error handling select menu interaction:', error);
         }
       } else if (interaction.isChatInputCommand()) {
         try {
@@ -217,6 +225,77 @@ export class DiscarrBot {
     });
 
     console.log('🔄 Monitoring started');
+  }
+
+  private async handleSeriesSearchMenu(interaction: StringSelectMenuInteraction): Promise<void> {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const seriesId = parseInt(interaction.customId.split('_')[2]);
+    const value = interaction.values[0];
+
+    if (value === 'cancel') {
+      // Remove the select menu from the original message
+      await interaction.message.edit({ 
+        embeds: interaction.message.embeds, 
+        components: [] 
+      });
+      
+      const embed = new EmbedBuilder()
+        .setTitle('❌ Search Cancelled')
+        .setDescription('Search cancelled. The missing episodes list remains displayed.')
+        .setColor(0x666666)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+      return;
+    }
+
+    if (value === 'start_search') {
+      // Get the Sonarr client from the series search command
+      const sonarrClient = this.seriesSearchCommand.sonarrClient;
+      
+      const embed = new EmbedBuilder()
+        .setTitle('🔍 Starting Search...')
+        .setDescription('Triggering search for missing episodes in Sonarr...')
+        .setColor(0xffaa00)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+
+      try {
+        const success = await sonarrClient.searchForMissingEpisodes(seriesId);
+        
+        if (success) {
+          embed
+            .setTitle('✅ Search Started')
+            .setDescription('Successfully triggered search for missing episodes! Check Sonarr for progress.')
+            .setColor(0x00ff00);
+        } else {
+          embed
+            .setTitle('❌ Search Failed')
+            .setDescription('Failed to trigger search in Sonarr. Check logs for details.')
+            .setColor(0xff0000);
+        }
+
+        await interaction.editReply({ embeds: [embed] });
+
+        // Remove the select menu from the original message
+        await interaction.message.edit({ 
+          embeds: interaction.message.embeds, 
+          components: [] 
+        });
+
+      } catch (error) {
+        console.error('Error starting series search:', error);
+        
+        embed
+          .setTitle('❌ Search Error')
+          .setDescription(`Error starting search: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          .setColor(0xff0000);
+
+        await interaction.editReply({ embeds: [embed] });
+      }
+    }
   }
 
   private async shutdown(): Promise<void> {

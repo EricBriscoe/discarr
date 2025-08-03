@@ -25,8 +25,8 @@ export class PaginationManager {
     tv: TVDownloadItem[],
     total: number
   ): { embed: EmbedBuilder; components: ActionRowBuilder<ButtonBuilder>[] } {
-    // Calculate pagination
-    const allItems = [...movies, ...tv].sort((a, b) => b.progress - a.progress);
+    // Calculate pagination - preserve the order from DownloadMonitor (already sorted by time left)
+    const allItems = [...movies, ...tv];
     this.totalPages = Math.max(1, Math.ceil(allItems.length / this.options.itemsPerPage));
     
     // Ensure current page is valid

@@ -30,8 +30,6 @@ export class RadarrClient extends BaseClient {
       // Use pagination to get ALL queue items
       const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
         includeUnknownMovieItems: false,
-        sortKey: 'timeleft',
-        sortDirection: 'ascending',
         includeMovie: true
       });
 
@@ -39,9 +37,7 @@ export class RadarrClient extends BaseClient {
         console.log(`Processing ${allRecords.length} Radarr queue items`);
       }
 
-      return allRecords
-        .map(item => this.processQueueItem(item))
-        .sort((a, b) => b.progress - a.progress);
+      return allRecords.map(item => this.processQueueItem(item));
     } catch (error) {
       if (this.verbose) {
         console.error('Failed to fetch Radarr queue:', error);
