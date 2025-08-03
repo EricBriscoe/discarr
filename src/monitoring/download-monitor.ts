@@ -42,9 +42,37 @@ export class DownloadMonitor {
         }
       });
 
-      // Sort by progress (highest first) - no limiting for pagination
+      // Sort by time left (shortest first) - no limiting for pagination
       const sortedDownloads = allDownloads
-        .sort((a, b) => b.progress - a.progress);
+        .sort((a, b) => {
+          // Parse time left for sorting (handle special cases)
+          const parseTimeLeft = (timeLeft: string): number => {
+            if (!timeLeft || timeLeft === '∞' || timeLeft.includes('∞')) return Infinity;
+            if (timeLeft.startsWith('<t:')) {
+              // Discord timestamp format - extract timestamp and calculate difference
+              const timestamp = parseInt(timeLeft.match(/<t:(\d+):/)?.[1] || '0');
+              const now = Math.floor(Date.now() / 1000);
+              const secondsLeft = timestamp - now;
+              return timestamp > 0 ? Math.max(0, secondsLeft) : Infinity;
+            }
+            // Handle special case for "< 1m"
+            if (timeLeft.includes('< 1m')) {
+              return 30; // 30 seconds for items finishing very soon
+            }
+            
+            // Parse time strings like "1h 30m", "45m", "2h"
+            const hours = (timeLeft.match(/(\d+)h/) || [])[1];
+            const minutes = (timeLeft.match(/(\d+)m/) || [])[1];
+            const seconds = (timeLeft.match(/(\d+)s/) || [])[1];
+            return (parseInt(hours || '0') * 3600) + (parseInt(minutes || '0') * 60) + parseInt(seconds || '0');
+          };
+
+          const aTime = parseTimeLeft(a.timeLeft || '');
+          const bTime = parseTimeLeft(b.timeLeft || '');
+          
+          // Sort by time left ascending (shortest time first)
+          return aTime - bTime;
+        });
 
       const movies = sortedDownloads.filter(item => item.service === 'radarr') as MovieDownloadItem[];
       const tv = sortedDownloads.filter(item => item.service === 'sonarr') as TVDownloadItem[];

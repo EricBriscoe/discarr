@@ -33,8 +33,6 @@ export class SonarrClient extends BaseClient {
       // Use pagination to get ALL queue items
       const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
         includeUnknownSeriesItems: false,
-        sortKey: 'timeleft',
-        sortDirection: 'ascending',
         includeSeries: true,
         includeEpisode: true
       });
@@ -43,11 +41,9 @@ export class SonarrClient extends BaseClient {
         console.log(`Processing ${allRecords.length} Sonarr queue items`);
       }
 
-      const downloads = await Promise.all(
+      return await Promise.all(
         allRecords.map(item => this.processQueueItem(item))
       );
-
-      return downloads.sort((a, b) => b.progress - a.progress);
     } catch (error) {
       if (this.verbose) {
         console.error('Failed to fetch Sonarr queue:', error);
@@ -341,9 +337,9 @@ export class SonarrClient extends BaseClient {
         year: s.year,
         status: s.status,
         monitored: s.monitored,
-        seasonCount: s.seasonCount || 0,
-        episodeFileCount: s.episodeFileCount || 0,
-        episodeCount: s.episodeCount || 0,
+        seasonCount: s.statistics?.seasonCount || 0,
+        episodeFileCount: s.statistics?.episodeFileCount || 0,
+        episodeCount: s.statistics?.episodeCount || 0,
         network: s.network
       }));
     } catch (error) {
@@ -351,6 +347,44 @@ export class SonarrClient extends BaseClient {
         console.error('Failed to fetch series list:', error);
       }
       return [];
+    }
+  }
+
+  async getSeriesById(seriesId: number): Promise<SeriesInfo | null> {
+    try {
+      const series = await this.makeRequest<any>(`/api/v3/series/${seriesId}`);
+      
+      return {
+        id: series.id,
+        title: series.title,
+        year: series.year,
+        status: series.status,
+        monitored: series.monitored,
+        seasonCount: series.statistics?.seasonCount || 0,
+        episodeFileCount: series.statistics?.episodeFileCount || 0,
+        episodeCount: series.statistics?.episodeCount || 0,
+        network: series.network
+      };
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to fetch series by ID:', error);
+      }
+      return null;
+    }
+  }
+
+  async searchForMissingEpisodes(seriesId: number): Promise<boolean> {
+    try {
+      await this.makeRequest('/api/v3/command', 'POST', {
+        name: 'SeriesSearch',
+        seriesId: seriesId
+      });
+      return true;
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to trigger series search:', error);
+      }
+      return false;
     }
   }
 }

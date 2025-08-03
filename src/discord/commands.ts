@@ -168,6 +168,15 @@ export class CalendarCommand implements SlashCommand {
           .setTimestamp();
 
         await interaction.editReply({ embeds: [embed] });
+
+        // Delete the no-episodes message after 30 seconds
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.error('Failed to delete calendar message:', error);
+          }
+        }, 30000);
         return;
       }
 
@@ -223,11 +232,8 @@ export class CalendarCommand implements SlashCommand {
           const hasFileIcon = seriesEpisodes.every(ep => ep.hasFile) ? '✅' : 
                              seriesEpisodes.some(ep => ep.hasFile) ? '🔄' : '📺';
           const monitorIcon = seriesEpisodes.some(ep => !ep.monitored) ? '🔇' : '';
-          const time = firstEpisode.airDateUtc ? new Date(firstEpisode.airDateUtc).toLocaleTimeString('en-US', { 
-            hour: 'numeric', 
-            minute: '2-digit',
-            timeZoneName: 'short'
-          }) : '';
+          const timestamp = firstEpisode.airDateUtc ? 
+            `<t:${Math.floor(new Date(firstEpisode.airDateUtc).getTime() / 1000)}:R>` : '';
 
           if (seriesEpisodes.length === 1) {
             // Single episode - show episode details
@@ -236,8 +242,8 @@ export class CalendarCommand implements SlashCommand {
             if (episode.title && episode.title !== 'TBA') {
               description += ` - ${episode.title}`;
             }
-            if (time) {
-              description += ` (${time})`;
+            if (timestamp) {
+              description += ` ${timestamp}`;
             }
             if (network !== 'Unknown') {
               description += ` • ${network}`;
@@ -251,8 +257,8 @@ export class CalendarCommand implements SlashCommand {
             const lastEp = sortedEpisodes[sortedEpisodes.length - 1];
             
             description += `${hasFileIcon}${monitorIcon} **${seriesTitle}** S${firstEp.seasonNumber.toString().padStart(2, '0')}E${firstEp.episodeNumber.toString().padStart(2, '0')}-E${lastEp.episodeNumber.toString().padStart(2, '0')} (${seriesEpisodes.length} episodes)`;
-            if (time) {
-              description += ` (${time})`;
+            if (timestamp) {
+              description += ` ${timestamp}`;
             }
             if (network !== 'Unknown') {
               description += ` • ${network}`;
@@ -272,6 +278,15 @@ export class CalendarCommand implements SlashCommand {
 
       await interaction.editReply({ embeds: [embed] });
 
+      // Delete the calendar message after 2 minutes to keep channel clean
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete calendar message:', error);
+        }
+      }, 120000);
+
     } catch (error) {
       console.error('Calendar command error:', error);
       
@@ -282,6 +297,15 @@ export class CalendarCommand implements SlashCommand {
         .setTimestamp();
 
       await interaction.editReply({ embeds: [errorEmbed] });
+
+      // Delete error message after 15 seconds
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete calendar error message:', error);
+        }
+      }, 15000);
     }
   }
 }
@@ -297,7 +321,7 @@ export class SeriesSearchCommand implements SlashCommand {
         .setAutocomplete(true)
     );
 
-  private sonarrClient: SonarrClient;
+  public sonarrClient: SonarrClient;
 
   constructor(sonarrClient: SonarrClient) {
     this.sonarrClient = sonarrClient;
@@ -323,20 +347,44 @@ export class SeriesSearchCommand implements SlashCommand {
           .setTimestamp();
 
         await interaction.editReply({ embeds: [embed] });
+
+        // Delete the not-found message after 30 seconds
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.error('Failed to delete series-search message:', error);
+          }
+        }, 30000);
         return;
       }
 
-      // Get missing episodes for this series
-      const missingEpisodes = await this.sonarrClient.getMissingEpisodes(matchedSeries.id);
+      // Get detailed series information and missing episodes
+      const [detailedSeries, missingEpisodes] = await Promise.all([
+        this.sonarrClient.getSeriesById(matchedSeries.id),
+        this.sonarrClient.getMissingEpisodes(matchedSeries.id)
+      ]);
+
+      // Use detailed series info if available, fallback to basic info
+      const seriesInfo = detailedSeries || matchedSeries;
 
       if (missingEpisodes.length === 0) {
         const embed = new EmbedBuilder()
           .setTitle('✅ No Missing Episodes')
-          .setDescription(`**${matchedSeries.title}** has no missing episodes!`)
+          .setDescription(`**${seriesInfo.title}** has no missing episodes!`)
           .setColor(0x00ff00)
           .setTimestamp();
 
         await interaction.editReply({ embeds: [embed] });
+
+        // Delete the no-missing-episodes message after 30 seconds
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.error('Failed to delete series-search message:', error);
+          }
+        }, 30000);
         return;
       }
 
@@ -350,7 +398,7 @@ export class SeriesSearchCommand implements SlashCommand {
       });
 
       const embed = new EmbedBuilder()
-        .setTitle(`🔍 Missing Episodes: ${matchedSeries.title}`)
+        .setTitle(`🔍 Missing Episodes: ${seriesInfo.title}`)
         .setColor(0xff6600)
         .setTimestamp();
 
@@ -387,18 +435,48 @@ export class SeriesSearchCommand implements SlashCommand {
       }
 
       description += `\n📊 **Series Stats:**\n`;
-      description += `• Episodes: ${matchedSeries.episodeFileCount}/${matchedSeries.episodeCount}\n`;
-      description += `• Seasons: ${matchedSeries.seasonCount}\n`;
-      description += `• Status: ${matchedSeries.status}\n`;
-      description += `• Monitored: ${matchedSeries.monitored ? 'Yes' : 'No'}\n`;
-      if (matchedSeries.network) {
-        description += `• Network: ${matchedSeries.network}\n`;
+      description += `• Episodes: ${seriesInfo.episodeFileCount}/${seriesInfo.episodeCount}\n`;
+      description += `• Seasons: ${seriesInfo.seasonCount}\n`;
+      description += `• Status: ${seriesInfo.status}\n`;
+      description += `• Monitored: ${seriesInfo.monitored ? 'Yes' : 'No'}\n`;
+      if (seriesInfo.network) {
+        description += `• Network: ${seriesInfo.network}\n`;
       }
 
       embed.setDescription(description);
       embed.setFooter({ text: '📺 Monitored • 🔇 Unmonitored' });
 
-      await interaction.editReply({ embeds: [embed] });
+      // Add button to start search
+      const searchButton = new ActionRowBuilder<StringSelectMenuBuilder>()
+        .addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`search_series_${seriesInfo.id}`)
+            .setPlaceholder('Start searching for missing episodes?')
+            .addOptions(
+              new StringSelectMenuOptionBuilder()
+                .setLabel('🔍 Start Search')
+                .setDescription('Begin searching for all missing episodes')
+                .setValue('start_search'),
+              new StringSelectMenuOptionBuilder()
+                .setLabel('❌ Cancel')
+                .setDescription('Just view the missing episodes')
+                .setValue('cancel')
+            )
+        );
+
+      await interaction.editReply({ 
+        embeds: [embed],
+        components: [searchButton]
+      });
+
+      // Delete the search results after 2 minutes to keep channel clean
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete series-search message:', error);
+        }
+      }, 120000);
 
     } catch (error) {
       console.error('Series search command error:', error);
@@ -410,6 +488,15 @@ export class SeriesSearchCommand implements SlashCommand {
         .setTimestamp();
 
       await interaction.editReply({ embeds: [errorEmbed] });
+
+      // Delete error message after 15 seconds
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete series-search error message:', error);
+        }
+      }, 15000);
     }
   }
 }
