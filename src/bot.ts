@@ -3,8 +3,9 @@ import { HealthMonitor } from './monitoring/health-monitor';
 import { DownloadMonitor } from './monitoring/download-monitor';
 import { DiscordEmbedBuilder } from './discord/embed-builder';
 import { DownloadView } from './discord/download-view';
-import { CleanupCommand } from './discord/commands';
+import { CleanupCommand, CalendarCommand, SeriesSearchCommand } from './discord/commands';
 import { QBittorrentClient } from './services/qbittorrent-client.js';
+import { SonarrClient } from './services/sonarr-client.js';
 import config from './config';
 
 export class DiscarrBot {
@@ -13,6 +14,8 @@ export class DiscarrBot {
   private downloadMonitor: DownloadMonitor;
   private downloadView: DownloadView;
   private cleanupCommand: CleanupCommand;
+  private calendarCommand: CalendarCommand;
+  private seriesSearchCommand: SeriesSearchCommand;
   private channel?: TextChannel;
   private currentHealthMessage?: Message;
   private currentDownloadsMessage?: Message;
@@ -31,13 +34,25 @@ export class DiscarrBot {
       throw new Error('qBittorrent configuration is required for cleanup command');
     }
     
+    if (!config.services.sonarr) {
+      throw new Error('Sonarr configuration is required for calendar and series search commands');
+    }
+    
     const qbittorrentClient = new QBittorrentClient({
       baseUrl: config.services.qbittorrent.url,
       username: config.services.qbittorrent.username,
       password: config.services.qbittorrent.password
     });
     
+    const sonarrClient = new SonarrClient(
+      config.services.sonarr.url,
+      config.services.sonarr.apiKey,
+      config.monitoring.verbose
+    );
+    
     this.cleanupCommand = new CleanupCommand(qbittorrentClient);
+    this.calendarCommand = new CalendarCommand(sonarrClient);
+    this.seriesSearchCommand = new SeriesSearchCommand(sonarrClient);
 
     this.setupEventHandlers();
   }
@@ -72,8 +87,16 @@ export class DiscarrBot {
         }
       } else if (interaction.isChatInputCommand()) {
         try {
-          if (interaction.commandName === 'cleanup') {
-            await this.cleanupCommand.execute(interaction);
+          switch (interaction.commandName) {
+            case 'cleanup':
+              await this.cleanupCommand.execute(interaction);
+              break;
+            case 'calendar':
+              await this.calendarCommand.execute(interaction);
+              break;
+            case 'series-search':
+              await this.seriesSearchCommand.execute(interaction);
+              break;
           }
         } catch (error) {
           console.error('❌ Error handling command interaction:', error);
@@ -94,7 +117,9 @@ export class DiscarrBot {
       const rest = new REST({ version: '10' }).setToken(config.discord.token);
       
       const commands = [
-        this.cleanupCommand.data.toJSON()
+        this.cleanupCommand.data.toJSON(),
+        this.calendarCommand.data.toJSON(),
+        this.seriesSearchCommand.data.toJSON()
       ];
 
       console.log('🔄 Registering slash commands...');
