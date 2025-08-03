@@ -1,35 +1,24 @@
-FROM python:3.11-slim
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Set Python to run in unbuffered mode for better container logging
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app/src
-
-# Install system dependencies required for discord.py and other packages
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    libffi-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+# Set environment variables for better container logging
+ENV NODE_ENV=production \
+    NPM_CONFIG_CACHE=/tmp/.npm
 
 # Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+COPY package*.json ./
+RUN npm ci --only=production
 
-# Copy application files
+# Copy source code and build
 COPY . .
+RUN npm run build
 
-# Create a volume mount point for persistent data
+# Create a volume mount point for persistent data (backward compatibility)
 VOLUME ["/app/config"]
 
-# Verify the installation and show debug info
-RUN python -c "import discord; print(f'discord.py version: {discord.__version__}')" && \
-    python -c "from discord.ext import commands; print('discord.ext.commands imported successfully')" && \
-    ls -la /app/src/
+# Verify the installation
+RUN node --version && npm --version && ls -la dist/
 
 # Run the application
-CMD ["python", "bot.py"]
+CMD ["npm", "start"]
