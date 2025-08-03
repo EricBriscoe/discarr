@@ -184,13 +184,7 @@ class AdminCommands:
             await interaction.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
 
     async def cleanup_command(self, interaction: discord.Interaction, download_monitor):
-        """Handle the /cleanup command to remove stuck and inactive downloads.
-        
-        Args:
-            interaction: Discord interaction object
-            download_monitor: DownloadMonitor instance
-        """
-        # Check if user has admin privileges
+        """Handle the /cleanup command to remove stuck and inactive downloads."""
         if not await has_admin_permissions(interaction):
             await safe_send_response(
                 interaction,
@@ -199,21 +193,10 @@ class AdminCommands:
             )
             return
             
-        # Defer interaction to avoid timeout
-        defer_success = await safe_defer_interaction(interaction, ephemeral=True)
-        if not defer_success:
+        if not await safe_defer_interaction(interaction, ephemeral=True):
             return
 
-        # Send initial "in progress" message
-        in_progress_embed = discord.Embed(
-            title="🧹 Smart Queue Cleanup in Progress...",
-            description="Analyzing download queue. This may take a moment.",
-            color=discord.Color.blue()
-        )
-        await interaction.followup.send(embed=in_progress_embed, ephemeral=True)
-
         try:
-            # Check if download monitor is available
             if not download_monitor:
                 error_embed = discord.Embed(
                     title="❌ Error",
@@ -223,14 +206,11 @@ class AdminCommands:
                 await interaction.edit_original_response(embed=error_embed)
                 return
             
-            # Analyze stuck downloads using progress tracking
             stuck_downloads = download_monitor.cache_manager.analyze_stuck_downloads()
             
-            # Separate stuck downloads by service
             radarr_stuck_ids = [item['id'] for item in stuck_downloads if item['service'] == 'radarr']
             sonarr_stuck_ids = [item['id'] for item in stuck_downloads if item['service'] == 'sonarr']
             
-            # Remove stuck downloads
             radarr_stuck_count = 0
             sonarr_stuck_count = 0
             if download_monitor.cache_manager.radarr_client:
@@ -238,7 +218,6 @@ class AdminCommands:
             if download_monitor.cache_manager.sonarr_client:
                 sonarr_stuck_count = await download_monitor.cache_manager.sonarr_client.remove_stuck_downloads(sonarr_stuck_ids)
             
-            # Also remove traditionally inactive items (failed, completed with errors, etc.)
             radarr_inactive_count = 0
             sonarr_inactive_count = 0
             if download_monitor.cache_manager.radarr_client:
@@ -246,17 +225,14 @@ class AdminCommands:
             if download_monitor.cache_manager.sonarr_client:
                 sonarr_inactive_count = await download_monitor.cache_manager.sonarr_client.remove_inactive_items()
             
-            # Get progress tracking statistics
             progress_stats = download_monitor.cache_manager.get_progress_statistics()
             
-            # Create detailed response embed
             embed = discord.Embed(
                 title="✅ Smart Queue Cleanup Completed",
                 description="Analyzed download progress and removed stuck/inactive items.",
                 color=discord.Color.green()
             )
             
-            # Add analysis results
             min_speed = progress_stats.get('min_download_speed_mbps', 0)
             max_speed = progress_stats.get('max_download_speed_mbps', 0)
             speed_info = f"{min_speed:.1f} - {max_speed:.1f} MB/s" if max_speed > 0 else "No active downloads"
@@ -269,7 +245,6 @@ class AdminCommands:
                 inline=False
             )
             
-            # Add removal results (combined counts)
             total_radarr_removed = radarr_stuck_count + radarr_inactive_count
             total_sonarr_removed = sonarr_stuck_count + sonarr_inactive_count
             
@@ -280,10 +255,9 @@ class AdminCommands:
                 inline=False
             )
             
-            # Add details about stuck downloads if any were found
             if stuck_downloads:
                 stuck_details = []
-                for item in stuck_downloads[:5]:  # Show first 5 stuck downloads
+                for item in stuck_downloads[:5]:
                     duration_hours = item['stuck_duration_minutes'] / 60
                     stuck_details.append(f"• {item['title'][:30]}... ({duration_hours:.1f}h no progress)")
                 
@@ -296,23 +270,19 @@ class AdminCommands:
                     inline=False
                 )
             
-            # Set color based on results
             total_stuck = radarr_stuck_count + sonarr_stuck_count
             total_inactive = radarr_inactive_count + sonarr_inactive_count
             
             if total_stuck > 0:
-                embed.color = discord.Color.orange()  # Orange if stuck downloads were found
+                embed.color = discord.Color.orange()
             elif total_inactive > 0:
-                embed.color = discord.Color.blue()    # Blue if only inactive items
+                embed.color = discord.Color.blue()
             else:
-                embed.color = discord.Color.green()   # Green if nothing to clean
+                embed.color = discord.Color.green()
             
-            # Edit the original message with the final results
             await interaction.edit_original_response(embed=embed)
             
-            # Refresh the queue display
             if download_monitor:
-                # Use create_task to avoid blocking this interaction
                 asyncio.create_task(download_monitor.check_downloads())
                 
         except Exception as e:
