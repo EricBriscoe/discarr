@@ -296,7 +296,7 @@ export class SonarrClient extends BaseClient {
     try {
       const params: any = {
         page: 1,
-        pageSize: 50,
+        pageSize: 1000, // Increase page size to ensure we get all episodes for filtering
         sortKey: 'airDateUtc',
         sortDirection: 'descending',
         monitored: true
@@ -308,7 +308,13 @@ export class SonarrClient extends BaseClient {
 
       const response = await this.makeRequest<{ records: any[] }>('/api/v3/wanted/missing', 'GET', undefined, params);
 
-      return response.records.map(episode => ({
+      // Filter by seriesId on our side since Sonarr API ignores the seriesId parameter 
+      // when that series has no missing episodes and returns episodes from other series
+      const filteredRecords = seriesId 
+        ? response.records.filter(episode => episode.seriesId === seriesId)
+        : response.records;
+
+      return filteredRecords.map(episode => ({
         id: episode.id,
         title: episode.title,
         seriesTitle: episode.series?.title || 'Unknown Series',
