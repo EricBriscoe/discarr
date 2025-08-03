@@ -27,13 +27,19 @@ export class RadarrClient extends BaseClient {
 
   async getActiveDownloads(): Promise<MovieDownloadItem[]> {
     try {
-      const response = await this.makeRequest<{ records: any[] }>('/api/v3/queue', {
-        pageSize: 50,
+      // Use pagination to get ALL queue items
+      const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
         includeUnknownMovieItems: false,
+        sortKey: 'timeleft',
+        sortDirection: 'ascending',
+        includeMovie: true
       });
 
-      return response.records
-        .filter(item => item.status === 'downloading' || item.status === 'queued')
+      if (this.verbose) {
+        console.log(`Processing ${allRecords.length} Radarr queue items`);
+      }
+
+      return allRecords
         .map(item => this.processQueueItem(item))
         .sort((a, b) => b.progress - a.progress);
     } catch (error) {
@@ -44,8 +50,57 @@ export class RadarrClient extends BaseClient {
     }
   }
 
+  async getImportBlockedItems(): Promise<{id: number, title: string}[]> {
+    try {
+      const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
+        includeUnknownMovieItems: false,
+        includeMovie: true
+      });
+
+      return allRecords
+        .filter(item => (item.trackedDownloadState || item.status) === 'importBlocked')
+        .map(item => ({
+          id: item.id,
+          title: item.title || 'Unknown Movie'
+        }));
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to fetch Radarr importBlocked items:', error);
+      }
+      return [];
+    }
+  }
+
+  async removeQueueItems(itemIds: number[]): Promise<{id: number, success: boolean, error?: string}[]> {
+    const results = await Promise.allSettled(
+      itemIds.map(async (id) => {
+        try {
+          await this.makeRequest(`/api/v3/queue/${id}`, 'DELETE', undefined, {
+            removeFromClient: true,
+            blocklist: false
+          });
+          return { id, success: true };
+        } catch (error) {
+          return { 
+            id, 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      })
+    );
+
+    return results.map(result => 
+      result.status === 'fulfilled' ? result.value : { 
+        id: 0, 
+        success: false, 
+        error: 'Promise rejected' 
+      }
+    );
+  }
+
   private processQueueItem(item: any): MovieDownloadItem {
-    const progress = item.sizeleft && item.size && item.size > 0
+    const progress = item.size && item.size > 0 && typeof item.sizeleft === 'number'
       ? 100 * (1 - item.sizeleft / item.size)
       : item.progress || 0;
 

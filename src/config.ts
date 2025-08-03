@@ -6,6 +6,7 @@ export interface Config {
   discord: {
     token: string;
     channelId: string;
+    clientId: string;
   };
   services: {
     radarr?: {
@@ -28,7 +29,7 @@ export interface Config {
 }
 
 function getConfig(): Config {
-  const requiredEnvVars = ['DISCORD_TOKEN', 'DISCORD_CHANNEL_ID'];
+  const requiredEnvVars = ['DISCORD_TOKEN', 'DISCORD_CHANNEL_ID', 'DISCORD_CLIENT_ID'];
   
   for (const envVar of requiredEnvVars) {
     if (!process.env[envVar]) {
@@ -40,6 +41,7 @@ function getConfig(): Config {
     discord: {
       token: process.env.DISCORD_TOKEN!,
       channelId: process.env.DISCORD_CHANNEL_ID!,
+      clientId: process.env.DISCORD_CLIENT_ID!,
     },
     services: {
       ...(process.env.RADARR_URL && process.env.RADARR_API_KEY && {

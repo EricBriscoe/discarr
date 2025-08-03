@@ -1,13 +1,17 @@
-import { Client, GatewayIntentBits, TextChannel, Message } from 'discord.js';
+import { Client, GatewayIntentBits, TextChannel, Message, Interaction, REST, Routes } from 'discord.js';
 import { HealthMonitor } from './monitoring/health-monitor';
 import { DownloadMonitor } from './monitoring/download-monitor';
 import { DiscordEmbedBuilder } from './discord/embed-builder';
+import { DownloadView } from './discord/download-view';
+import { CleanupCommand } from './discord/commands';
 import config from './config';
 
 export class DiscarrBot {
   private client: Client;
   private healthMonitor: HealthMonitor;
   private downloadMonitor: DownloadMonitor;
+  private downloadView: DownloadView;
+  private cleanupCommand: CleanupCommand;
   private channel?: TextChannel;
   private currentHealthMessage?: Message;
   private currentDownloadsMessage?: Message;
@@ -20,6 +24,11 @@ export class DiscarrBot {
 
     this.healthMonitor = new HealthMonitor();
     this.downloadMonitor = new DownloadMonitor(this.healthMonitor);
+    this.downloadView = new DownloadView();
+    this.cleanupCommand = new CleanupCommand(
+      this.healthMonitor.getRadarrClient()!,
+      this.healthMonitor.getSonarrClient()!
+    );
 
     this.setupEventHandlers();
   }
@@ -29,6 +38,8 @@ export class DiscarrBot {
       console.log(`✅ Bot logged in as ${this.client.user?.tag}`);
       
       try {
+        await this.registerSlashCommands();
+        
         this.channel = await this.client.channels.fetch(config.discord.channelId) as TextChannel;
         console.log(`📍 Connected to channel: ${this.channel.name}`);
         
@@ -41,12 +52,53 @@ export class DiscarrBot {
       }
     });
 
+    this.client.on('interactionCreate', async (interaction) => {
+      if (interaction.isButton()) {
+        try {
+          if (this.downloadView.isValidInteraction(interaction.customId)) {
+            await this.downloadView.handleButtonInteraction(interaction);
+          }
+        } catch (error) {
+          console.error('❌ Error handling button interaction:', error);
+        }
+      } else if (interaction.isChatInputCommand()) {
+        try {
+          if (interaction.commandName === 'cleanup') {
+            await this.cleanupCommand.execute(interaction);
+          }
+        } catch (error) {
+          console.error('❌ Error handling command interaction:', error);
+        }
+      }
+    });
+
     this.client.on('error', (error) => {
       console.error('❌ Discord client error:', error);
     });
 
     process.on('SIGINT', () => this.shutdown());
     process.on('SIGTERM', () => this.shutdown());
+  }
+
+  private async registerSlashCommands(): Promise<void> {
+    try {
+      const rest = new REST({ version: '10' }).setToken(config.discord.token);
+      
+      const commands = [
+        this.cleanupCommand.data.toJSON()
+      ];
+
+      console.log('🔄 Registering slash commands...');
+      
+      await rest.put(
+        Routes.applicationCommands(config.discord.clientId),
+        { body: commands }
+      );
+
+      console.log('✅ Slash commands registered successfully');
+    } catch (error) {
+      console.error('❌ Error registering slash commands:', error);
+    }
   }
 
   private async cleanupPreviousMessages(): Promise<void> {
@@ -77,14 +129,17 @@ export class DiscarrBot {
       const healthEmbed = DiscordEmbedBuilder.createHealthEmbed(healthStatus);
       this.currentHealthMessage = await this.channel.send({ embeds: [healthEmbed] });
 
-      // Create initial downloads message
+      // Create initial downloads message with pagination
       const downloads = await this.downloadMonitor.getActiveDownloads();
-      const downloadsEmbed = DiscordEmbedBuilder.createDownloadsEmbed(
-        downloads.movies, 
-        downloads.tv, 
+      const { embed: downloadsEmbed, components } = this.downloadView.updateData(
+        downloads.movies,
+        downloads.tv,
         downloads.total
       );
-      this.currentDownloadsMessage = await this.channel.send({ embeds: [downloadsEmbed] });
+      this.currentDownloadsMessage = await this.channel.send({ 
+        embeds: [downloadsEmbed],
+        components
+      });
 
       console.log('📨 Initial messages created');
     } catch (error) {
@@ -107,17 +162,20 @@ export class DiscarrBot {
       }
     }, config.monitoring.healthCheckInterval);
 
-    // Download monitoring
+    // Download monitoring with pagination
     this.downloadMonitor.startMonitoring(async (downloads) => {
       try {
-        const downloadsEmbed = DiscordEmbedBuilder.createDownloadsEmbed(
+        const { embed: downloadsEmbed, components } = this.downloadView.updateData(
           downloads.movies,
           downloads.tv,
           downloads.total
         );
 
         if (this.currentDownloadsMessage) {
-          await this.currentDownloadsMessage.edit({ embeds: [downloadsEmbed] });
+          await this.currentDownloadsMessage.edit({ 
+            embeds: [downloadsEmbed],
+            components
+          });
         }
       } catch (error) {
         console.error('❌ Error updating downloads:', error);
