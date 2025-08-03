@@ -1,5 +1,5 @@
 import { BaseClient } from './base-client';
-import { ServiceStatus, TVDownloadItem } from '../types';
+import { ServiceStatus, TVDownloadItem, CalendarEpisode, SeriesSearchResult, MissingEpisode, SeriesInfo } from '../types';
 
 export class SonarrClient extends BaseClient {
   private seriesCache = new Map<number, any>();
@@ -235,5 +235,122 @@ export class SonarrClient extends BaseClient {
         error: 'Promise rejected' 
       }
     );
+  }
+
+  async getCalendarEpisodes(days: number = 7): Promise<CalendarEpisode[]> {
+    try {
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(startDate.getDate() + days);
+
+      const episodes = await this.makeRequest<any[]>('/api/v3/calendar', 'GET', undefined, {
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0],
+        includeSeries: true
+      });
+
+      return episodes.map(episode => ({
+        id: episode.id,
+        title: episode.title,
+        seriesTitle: episode.series?.title || 'Unknown Series',
+        seasonNumber: episode.seasonNumber,
+        episodeNumber: episode.episodeNumber,
+        airDateUtc: episode.airDateUtc,
+        hasFile: episode.hasFile,
+        monitored: episode.monitored,
+        overview: episode.overview,
+        seriesType: episode.series?.seriesType,
+        network: episode.series?.network,
+        status: episode.series?.status
+      }));
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to fetch Sonarr calendar:', error);
+      }
+      return [];
+    }
+  }
+
+  async searchSeries(query: string): Promise<SeriesSearchResult[]> {
+    try {
+      const results = await this.makeRequest<any[]>('/api/v3/series/lookup', 'GET', undefined, {
+        term: query
+      });
+
+      return results.slice(0, 10).map(series => ({
+        tvdbId: series.tvdbId,
+        title: series.title,
+        year: series.year,
+        overview: series.overview,
+        network: series.network,
+        status: series.status,
+        genres: series.genres || [],
+        remotePoster: series.remotePoster,
+        seasons: series.seasons?.length || 0
+      }));
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to search series:', error);
+      }
+      return [];
+    }
+  }
+
+  async getMissingEpisodes(seriesId?: number): Promise<MissingEpisode[]> {
+    try {
+      const params: any = {
+        page: 1,
+        pageSize: 50,
+        sortKey: 'airDateUtc',
+        sortDirection: 'descending',
+        monitored: true
+      };
+
+      if (seriesId) {
+        params.seriesId = seriesId;
+      }
+
+      const response = await this.makeRequest<{ records: any[] }>('/api/v3/wanted/missing', 'GET', undefined, params);
+
+      return response.records.map(episode => ({
+        id: episode.id,
+        title: episode.title,
+        seriesTitle: episode.series?.title || 'Unknown Series',
+        seriesId: episode.seriesId,
+        seasonNumber: episode.seasonNumber,
+        episodeNumber: episode.episodeNumber,
+        airDateUtc: episode.airDateUtc,
+        monitored: episode.monitored,
+        overview: episode.overview
+      }));
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to fetch missing episodes:', error);
+      }
+      return [];
+    }
+  }
+
+  async getSeriesList(): Promise<SeriesInfo[]> {
+    try {
+      const series = await this.makeRequest<any[]>('/api/v3/series');
+      
+      return series.map(s => ({
+        id: s.id,
+        title: s.title,
+        year: s.year,
+        status: s.status,
+        monitored: s.monitored,
+        seasonCount: s.seasonCount || 0,
+        episodeFileCount: s.episodeFileCount || 0,
+        episodeCount: s.episodeCount || 0,
+        network: s.network
+      }));
+    } catch (error) {
+      if (this.verbose) {
+        console.error('Failed to fetch series list:', error);
+      }
+      return [];
+    }
   }
 }
