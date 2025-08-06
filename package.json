@@ -26,7 +26,6 @@
     "axios": "^1.6.7",
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.4",
-    "node-fetch": "^3.3.2",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {

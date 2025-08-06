@@ -1,5 +1,7 @@
 import { ServiceStatus } from '../types.js';
-import fetch from 'node-fetch';
+
+// Use native Node.js fetch (available in Node 18+)
+declare const fetch: typeof globalThis.fetch;
 
 export interface QBittorrentTorrent {
   hash: string;
