@@ -91,3 +91,24 @@ export interface SeriesInfo {
 }
 
 export type AnyDownloadItem = MovieDownloadItem | TVDownloadItem;
+
+export interface BlockedItemDetails {
+  id: number;
+  title: string;
+  service: 'radarr' | 'sonarr';
+  downloadClient: string;
+  indexer: string;
+  protocol: string;
+  size: number;
+  outputPath: string;
+  quality: any;
+  languages: any;
+  statusMessages: Array<{
+    title: string;
+    messages: string[];
+  }>;
+  added: string;
+  movie?: any;
+  series?: any;
+  episodes?: any[];
+}

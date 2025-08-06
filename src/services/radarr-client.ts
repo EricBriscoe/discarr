@@ -138,9 +138,16 @@ export class RadarrClient extends BaseClient {
       : item.progress || 0;
 
     const size = (item.size || 0) / (1024 * 1024 * 1024); // Convert to GB
-    const timeLeft = item.estimatedCompletionTime 
-      ? `<t:${Math.floor(new Date(item.estimatedCompletionTime).getTime() / 1000)}:R>`
-      : this.parseTimeLeft(item.timeleft || '');
+    
+    // Handle import blocked items with special ETA
+    let timeLeft: string;
+    if (item.trackedDownloadState === 'importBlocked') {
+      timeLeft = 'Manual action required';
+    } else if (item.estimatedCompletionTime) {
+      timeLeft = `<t:${Math.floor(new Date(item.estimatedCompletionTime).getTime() / 1000)}:R>`;
+    } else {
+      timeLeft = this.parseTimeLeft(item.timeleft || '');
+    }
 
     // Get clean movie title
     const cleanTitle = await this.getCleanMovieTitle(item);
@@ -152,7 +159,7 @@ export class RadarrClient extends BaseClient {
       size,
       sizeLeft: item.sizeleft || 0,
       timeLeft,
-      status: item.trackedDownloadState || item.status,
+      status: item.status,
       protocol: item.protocol || 'unknown',
       downloadClient: item.downloadClient || 'unknown',
       service: 'radarr',
@@ -176,5 +183,38 @@ export class RadarrClient extends BaseClient {
     const movie = this.movieCache.get(movieId);
     const year = movie.year ? ` (${movie.year})` : '';
     return `${movie.title}${year}`;
+  }
+
+  async getDetailedBlockedItem(id: number): Promise<any> {
+    const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
+      includeUnknownMovieItems: false,
+      includeMovie: true
+    });
+
+    const item = allRecords.find(record => record.id === id && 
+      (record.trackedDownloadState === 'importBlocked' || record.status === 'importBlocked'));
+    
+    if (!item) {
+      throw new Error(`Import blocked item with ID ${id} not found`);
+    }
+
+    return item;
+  }
+
+  async approveImport(id: number): Promise<boolean> {
+    // Get the detailed item info first
+    const item = await this.getDetailedBlockedItem(id);
+    
+    // Use manual import endpoint to approve
+    const response = await this.makeRequest('/api/v3/manualimport', 'PUT', undefined, [{
+      id: item.downloadId,
+      movieId: item.movieId,
+      movie: item.movie,
+      quality: item.quality,
+      languages: item.languages,
+      downloadId: item.downloadId
+    }]);
+
+    return true;
   }
 }

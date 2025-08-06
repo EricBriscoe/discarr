@@ -5,11 +5,15 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ComponentType,
   SlashCommandOptionsOnlyBuilder
 } from 'discord.js';
 import { QBittorrentClient } from '../services/qbittorrent-client.js';
 import { SonarrClient } from '../services/sonarr-client.js';
+import { RadarrClient } from '../services/radarr-client.js';
+import { BlockedItemDetails } from '../types.js';
 
 export interface SlashCommand {
   data: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder;
@@ -497,6 +501,270 @@ export class SeriesSearchCommand implements SlashCommand {
           console.error('Failed to delete series-search error message:', error);
         }
       }, 15000);
+    }
+  }
+}
+
+export class UnblockCommand implements SlashCommand {
+  data = new SlashCommandBuilder()
+    .setName('unblock')
+    .setDescription('Process import blocked files with approval/rejection workflow');
+
+  private radarrClient: RadarrClient;
+  private sonarrClient: SonarrClient;
+
+  constructor(radarrClient: RadarrClient, sonarrClient: SonarrClient) {
+    this.radarrClient = radarrClient;
+    this.sonarrClient = sonarrClient;
+  }
+
+  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+    await interaction.deferReply();
+
+    try {
+      // Get all import blocked items from both services
+      const [radarrBlocked, sonarrBlocked] = await Promise.all([
+        this.radarrClient.getImportBlockedItems(),
+        this.sonarrClient.getImportBlockedItems()
+      ]);
+
+      const allBlocked = [
+        ...radarrBlocked.map(item => ({ ...item, service: 'radarr' as const })),
+        ...sonarrBlocked.map(item => ({ ...item, service: 'sonarr' as const }))
+      ];
+
+      if (allBlocked.length === 0) {
+        const embed = new EmbedBuilder()
+          .setTitle('✅ No Import Blocked Items')
+          .setDescription('There are no files currently blocked from import.')
+          .setColor(0x00ff00)
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.error('Failed to delete unblock message:', error);
+          }
+        }, 30000);
+        return;
+      }
+
+      // Start the interactive flow
+      await this.processBlockedItems(interaction, allBlocked, 0);
+
+    } catch (error) {
+      console.error('Unblock command error:', error);
+      
+      const errorEmbed = new EmbedBuilder()
+        .setTitle('🚫 Unblock Error')
+        .setDescription(`Failed to fetch import blocked items: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        .setColor(0xff0000)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [errorEmbed] });
+
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete unblock error message:', error);
+        }
+      }, 15000);
+    }
+  }
+
+  private async processBlockedItems(
+    interaction: ChatInputCommandInteraction, 
+    blockedItems: Array<{id: number, title: string, service: 'radarr' | 'sonarr'}>, 
+    currentIndex: number,
+    processedCount: { approved: number; rejected: number; skipped: number } = { approved: 0, rejected: 0, skipped: 0 }
+  ): Promise<void> {
+    if (currentIndex >= blockedItems.length) {
+      // Show final summary
+      const embed = new EmbedBuilder()
+        .setTitle('🎉 Unblock Complete')
+        .setDescription(`Processed ${blockedItems.length} import blocked items:\n\n` +
+          `✅ **Approved**: ${processedCount.approved}\n` +
+          `❌ **Rejected**: ${processedCount.rejected}\n` +
+          `⏭️ **Skipped**: ${processedCount.skipped}`)
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed], components: [] });
+
+      setTimeout(async () => {
+        try {
+          await interaction.deleteReply();
+        } catch (error) {
+          console.error('Failed to delete unblock summary message:', error);
+        }
+      }, 60000);
+      return;
+    }
+
+    const currentItem = blockedItems[currentIndex];
+    
+    try {
+      // Get detailed information about the current item
+      const client = currentItem.service === 'radarr' ? this.radarrClient : this.sonarrClient;
+      const details = await client.getDetailedBlockedItem(currentItem.id);
+      
+      // Create detailed embed
+      const embed = this.createDetailedEmbed(currentItem, details, currentIndex + 1, blockedItems.length);
+      
+      // Create action buttons
+      const buttons = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`unblock_approve_${currentItem.service}_${currentItem.id}_${currentIndex}`)
+            .setLabel('✅ Approve Import')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`unblock_reject_${currentItem.service}_${currentItem.id}_${currentIndex}`)
+            .setLabel('❌ Reject & Delete')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId(`unblock_skip_${currentItem.service}_${currentItem.id}_${currentIndex}`)
+            .setLabel('⏭️ Skip')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+      await interaction.editReply({ 
+        embeds: [embed], 
+        components: [buttons] 
+      });
+
+    } catch (error) {
+      console.error(`Error processing blocked item ${currentItem.id}:`, error);
+      
+      // Skip this item and continue
+      await this.processBlockedItems(interaction, blockedItems, currentIndex + 1, {
+        ...processedCount,
+        skipped: processedCount.skipped + 1
+      });
+    }
+  }
+
+  private createDetailedEmbed(
+    item: {id: number, title: string, service: 'radarr' | 'sonarr'}, 
+    details: any,
+    current: number,
+    total: number
+  ): EmbedBuilder {
+    const embed = new EmbedBuilder()
+      .setTitle(`🚫 Import Blocked (${current}/${total})`)
+      .setColor(0xff6600)
+      .setTimestamp();
+
+    // Extract key information
+    const size = details.size ? `${(details.size / 1073741824).toFixed(1)}GB` : 'Unknown';
+    const quality = details.quality?.quality?.name || 'Unknown';
+    const downloadClient = details.downloadClient || 'Unknown';
+    const indexer = details.indexer || 'Unknown';
+    const protocol = details.protocol || 'Unknown';
+    
+    // Get blocking reason from status messages
+    let blockingReason = 'Unknown reason';
+    if (details.statusMessages && details.statusMessages.length > 0) {
+      const messages = details.statusMessages[0]?.messages || [];
+      if (messages.length > 0) {
+        blockingReason = messages.join('; ');
+      }
+    }
+
+    const addedDate = details.added ? new Date(details.added).toLocaleString() : 'Unknown';
+    const outputPath = details.outputPath || 'Unknown';
+
+    let description = `**${item.title}**\n\n`;
+    description += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    description += `📂 **File Path**: \`${outputPath}\`\n`;
+    description += `📊 **Size**: ${size}\n`;
+    description += `🎬 **Quality**: ${quality}\n`;
+    description += `📡 **Source**: ${indexer} (${protocol})\n`;
+    description += `💾 **Client**: ${downloadClient}\n`;
+    description += `⏰ **Added**: ${addedDate}\n\n`;
+    description += `❌ **Blocking Reason**:\n`;
+    description += `*${blockingReason}*\n\n`;
+    description += `Choose an action to continue:`;
+
+    embed.setDescription(description);
+    
+    return embed;
+  }
+
+  // Method to handle button interactions (will be called from bot.ts)
+  async handleButtonInteraction(
+    interaction: any, 
+    action: string, 
+    service: 'radarr' | 'sonarr', 
+    itemId: number, 
+    currentIndex: number,
+    allBlocked: Array<{id: number, title: string, service: 'radarr' | 'sonarr'}>,
+    processedCount: { approved: number; rejected: number; skipped: number }
+  ): Promise<void> {
+    await interaction.deferUpdate();
+
+    const client = service === 'radarr' ? this.radarrClient : this.sonarrClient;
+    const currentItem = allBlocked.find(item => item.id === itemId);
+
+    try {
+      let resultMessage = '';
+      let newProcessedCount = { ...processedCount };
+
+      switch (action) {
+        case 'approve':
+          try {
+            await client.approveImport(itemId);
+            resultMessage = `✅ **Approved**: ${currentItem?.title}`;
+            newProcessedCount.approved++;
+          } catch (error) {
+            resultMessage = `❌ **Approval Failed**: ${currentItem?.title} - ${error instanceof Error ? error.message : 'Unknown error'}`;
+            newProcessedCount.skipped++;
+          }
+          break;
+
+        case 'reject':
+          try {
+            await client.removeQueueItems([itemId]);
+            resultMessage = `❌ **Rejected**: ${currentItem?.title}`;
+            newProcessedCount.rejected++;
+          } catch (error) {
+            resultMessage = `❌ **Rejection Failed**: ${currentItem?.title} - ${error instanceof Error ? error.message : 'Unknown error'}`;
+            newProcessedCount.skipped++;
+          }
+          break;
+
+        case 'skip':
+          resultMessage = `⏭️ **Skipped**: ${currentItem?.title}`;
+          newProcessedCount.skipped++;
+          break;
+      }
+
+      // Show brief result message
+      const resultEmbed = new EmbedBuilder()
+        .setTitle('Processing...')
+        .setDescription(resultMessage)
+        .setColor(action === 'approve' ? 0x00ff00 : action === 'reject' ? 0xff0000 : 0x666666)
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [resultEmbed], components: [] });
+
+      // Wait briefly to show the result, then continue
+      setTimeout(async () => {
+        await this.processBlockedItems(interaction, allBlocked, currentIndex + 1, newProcessedCount);
+      }, 1500);
+
+    } catch (error) {
+      console.error(`Error handling ${action} for item ${itemId}:`, error);
+      
+      // Skip this item and continue
+      await this.processBlockedItems(interaction, allBlocked, currentIndex + 1, {
+        ...processedCount,
+        skipped: processedCount.skipped + 1
+      });
     }
   }
 }
