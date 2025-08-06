@@ -1,3 +1,5 @@
+import type { QBittorrentTransferInfo, QBittorrentStats } from './services/qbittorrent-client.js';
+
 export interface ServiceStatus {
   status: 'online' | 'offline' | 'error';
   lastCheck: Date;
@@ -32,10 +34,16 @@ export interface MovieDownloadItem extends DownloadItem {
   service: 'radarr';
 }
 
+export interface QBittorrentStatus extends ServiceStatus {
+  transferInfo?: QBittorrentTransferInfo;
+  torrentStats?: QBittorrentStats;
+}
+
 export interface HealthStatus {
   plex?: ServiceStatus;
   radarr?: ServiceStatus;
   sonarr?: ServiceStatus;
+  qbittorrent?: QBittorrentStatus;
   lastUpdated: Date;
 }
 

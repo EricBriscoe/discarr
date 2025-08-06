@@ -1,8 +1,18 @@
 import { EmbedBuilder } from 'discord.js';
 import { HealthStatus, MovieDownloadItem, TVDownloadItem } from '../types';
+import { QBittorrentClient } from '../services/qbittorrent-client';
 
 export class DiscordEmbedBuilder {
   static createHealthEmbed(healthStatus: HealthStatus): EmbedBuilder {
+    console.log('📋 Creating health embed...');
+    console.log('📊 Health status received:', {
+      plex: healthStatus.plex?.status,
+      radarr: healthStatus.radarr?.status,
+      sonarr: healthStatus.sonarr?.status,
+      qbittorrent: healthStatus.qbittorrent?.status,
+      lastUpdated: healthStatus.lastUpdated
+    });
+
     const embed = new EmbedBuilder()
       .setTitle('🏥 Service Health Status')
       .setTimestamp(healthStatus.lastUpdated)
@@ -45,6 +55,66 @@ export class DiscordEmbedBuilder {
         value: `${emoji} ${healthStatus.sonarr.status}${responseTime}${version}`,
         inline: false,
       });
+    }
+
+    if (healthStatus.qbittorrent) {
+      console.log('🏴‍☠️ Processing qBittorrent section...');
+      console.log('📊 qBittorrent data:', healthStatus.qbittorrent);
+      
+      const emoji = this.getStatusEmoji(healthStatus.qbittorrent.status);
+      const responseTime = healthStatus.qbittorrent.responseTime 
+        ? ` (${healthStatus.qbittorrent.responseTime}ms)` 
+        : '';
+      
+      let value = `${emoji} ${healthStatus.qbittorrent.status}${responseTime}`;
+
+      // Add transfer info if available
+      if (healthStatus.qbittorrent.transferInfo) {
+        console.log('📈 Adding transfer info to embed...');
+        const transferInfo = healthStatus.qbittorrent.transferInfo;
+        const dlSpeed = QBittorrentClient.formatSpeed(transferInfo.dl_info_speed);
+        const upSpeed = QBittorrentClient.formatSpeed(transferInfo.up_info_speed);
+        
+        if (transferInfo.dl_info_speed > 0 || transferInfo.up_info_speed > 0) {
+          value += `\n🔽 ${dlSpeed} • 🔼 ${upSpeed}`;
+        }
+
+        // Add session totals
+        const sessionDL = QBittorrentClient.formatBytes(transferInfo.dl_info_data);
+        const sessionUP = QBittorrentClient.formatBytes(transferInfo.up_info_data);
+        value += `\n📊 Session: ${sessionDL} ⬇️ • ${sessionUP} ⬆️`;
+
+        // Add connection info
+        const connectionEmoji = transferInfo.connection_status === 'connected' ? '⚡' : '🔥';
+        const dhtNodes = transferInfo.dht_nodes > 0 ? `🌐 ${transferInfo.dht_nodes} DHT nodes • ` : '';
+        value += `\n${dhtNodes}${connectionEmoji} ${transferInfo.connection_status}`;
+      }
+
+      // Add torrent stats if available
+      if (healthStatus.qbittorrent.torrentStats) {
+        console.log('🎯 Adding torrent stats to embed...');
+        const stats = healthStatus.qbittorrent.torrentStats;
+        const activeParts = [];
+        
+        if (stats.downloading > 0) activeParts.push(`📥 ${stats.downloading} downloading`);
+        if (stats.seeding > 0) activeParts.push(`🌱 ${stats.seeding} seeding`);
+        if (stats.queued > 0) activeParts.push(`⏳ ${stats.queued} queued`);
+        if (stats.stalled > 0) activeParts.push(`⚠️ ${stats.stalled} stalled`);
+        if (stats.error > 0) activeParts.push(`❌ ${stats.error} error`);
+
+        if (activeParts.length > 0) {
+          value += `\n${activeParts.join(' • ')}`;
+        }
+      }
+
+      console.log('➕ Adding qBittorrent field to embed with value:', value);
+      embed.addFields({
+        name: '🏴‍☠️ qBittorrent',
+        value,
+        inline: false,
+      });
+    } else {
+      console.log('❌ No qBittorrent data in healthStatus');
     }
 
     return embed;
@@ -115,7 +185,7 @@ export class DiscordEmbedBuilder {
   }
 
   private static getHealthColor(healthStatus: HealthStatus): number {
-    const services = [healthStatus.plex, healthStatus.radarr, healthStatus.sonarr]
+    const services = [healthStatus.plex, healthStatus.radarr, healthStatus.sonarr, healthStatus.qbittorrent]
       .filter(Boolean);
 
     if (services.some(service => service?.status === 'offline')) {
