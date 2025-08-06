@@ -70,7 +70,7 @@ export class HealthMonitor {
     }
 
     if (this.qbittorrentClient) {
-      console.log('🏴‍☠️ Adding qBittorrent health check');
+      console.log('⚡ Adding qBittorrent health check');
       checks.push(
         this.checkQBittorrentHealth().then(status => ['qbittorrent', status] as [string, QBittorrentStatus])
       );
