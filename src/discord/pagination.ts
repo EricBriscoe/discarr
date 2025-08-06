@@ -1,5 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { MovieDownloadItem, TVDownloadItem } from '../types';
+import { AnyDownloadItem } from '../types';
 import { DiscordEmbedBuilder } from './embed-builder';
 
 export interface PaginationOptions {
@@ -21,13 +21,11 @@ export class PaginationManager {
   }
 
   createPaginatedEmbed(
-    movies: MovieDownloadItem[],
-    tv: TVDownloadItem[],
+    items: AnyDownloadItem[],
     total: number
   ): { embed: EmbedBuilder; components: ActionRowBuilder<ButtonBuilder>[] } {
-    // Calculate pagination - preserve the order from DownloadMonitor (already sorted by time left)
-    const allItems = [...movies, ...tv];
-    this.totalPages = Math.max(1, Math.ceil(allItems.length / this.options.itemsPerPage));
+    // Calculate pagination - items are already sorted by time left
+    this.totalPages = Math.max(1, Math.ceil(items.length / this.options.itemsPerPage));
     
     // Ensure current page is valid
     if (this.currentPage > this.totalPages) {
@@ -37,14 +35,10 @@ export class PaginationManager {
     // Get items for current page
     const startIndex = (this.currentPage - 1) * this.options.itemsPerPage;
     const endIndex = startIndex + this.options.itemsPerPage;
-    const pageItems = allItems.slice(startIndex, endIndex);
-
-    // Separate movies and TV for this page
-    const pageMovies = pageItems.filter(item => item.service === 'radarr') as MovieDownloadItem[];
-    const pageTv = pageItems.filter(item => item.service === 'sonarr') as TVDownloadItem[];
+    const pageItems = items.slice(startIndex, endIndex);
 
     // Create embed
-    const embed = this.createDownloadsEmbed(pageMovies, pageTv, total);
+    const embed = this.createDownloadsEmbed(pageItems, total);
     
     // Add pagination footer
     if (this.totalPages > 1) {
@@ -59,8 +53,7 @@ export class PaginationManager {
   }
 
   private createDownloadsEmbed(
-    movies: MovieDownloadItem[],
-    tv: TVDownloadItem[],
+    items: AnyDownloadItem[],
     total: number
   ): EmbedBuilder {
     const lastUpdate = `<t:${Math.floor(Date.now() / 1000)}:R>`;
@@ -75,37 +68,20 @@ export class PaginationManager {
       embed.setColor(0x808080);
       return embed;
     }
-
-    // Add movies section
-    if (movies.length > 0) {
-      const movieList = movies.map(movie => {
-        const progressBar = this.createProgressBar(movie.progress);
-        const timeLeft = movie.timeLeft || '∞';
-        const status = movie.status || 'unknown';
-        const size = movie.size ? ` • ${movie.size.toFixed(1)}GB` : '';
-        return `**${this.truncateTitle(movie.title)}**\n${progressBar} ${movie.progress.toFixed(1)}%${size} • ${timeLeft}\n*Status: ${status}*`;
+    
+    if (items.length > 0) {
+      const downloadsList = items.map(item => {
+        const progressBar = this.createProgressBar(item.progress);
+        const timeLeft = item.timeLeft || '∞';
+        const status = item.status || 'unknown';
+        const size = item.size ? ` • ${item.size.toFixed(1)}GB` : '';
+        const emoji = item.service === 'radarr' ? '🎬' : '📺';
+        return `${emoji} **${this.truncateTitle(item.title)}**\n${progressBar} ${item.progress.toFixed(1)}%${size} • ${timeLeft}\n*Status: ${status}*`;
       }).join('\n\n');
 
       embed.addFields({
-        name: `🎬 Movies (${movies.length} on this page)`,
-        value: movieList,
-        inline: false,
-      });
-    }
-
-    // Add TV section
-    if (tv.length > 0) {
-      const tvList = tv.map(show => {
-        const progressBar = this.createProgressBar(show.progress);
-        const timeLeft = show.timeLeft || '∞';
-        const status = show.status || 'unknown';
-        const size = show.size ? ` • ${show.size.toFixed(1)}GB` : '';
-        return `**${this.truncateTitle(show.title)}**\n${progressBar} ${show.progress.toFixed(1)}%${size} • ${timeLeft}\n*Status: ${status}*`;
-      }).join('\n\n');
-
-      embed.addFields({
-        name: `📺 TV Shows (${tv.length} on this page)`,
-        value: tvList,
+        name: `Downloads (${items.length} on this page)`,
+        value: downloadsList,
         inline: false,
       });
     }

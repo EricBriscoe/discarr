@@ -11,8 +11,7 @@ export class DownloadMonitor {
   }
 
   async getActiveDownloads(): Promise<{
-    movies: MovieDownloadItem[];
-    tv: TVDownloadItem[];
+    items: AnyDownloadItem[];
     total: number;
   }> {
     const promises: Promise<AnyDownloadItem[]>[] = [];
@@ -29,7 +28,7 @@ export class DownloadMonitor {
     }
 
     if (promises.length === 0) {
-      return { movies: [], tv: [], total: 0 };
+      return { items: [], total: 0 };
     }
 
     try {
@@ -74,23 +73,19 @@ export class DownloadMonitor {
           return aTime - bTime;
         });
 
-      const movies = sortedDownloads.filter(item => item.service === 'radarr') as MovieDownloadItem[];
-      const tv = sortedDownloads.filter(item => item.service === 'sonarr') as TVDownloadItem[];
-
       return {
-        movies,
-        tv,
+        items: sortedDownloads,
         total: allDownloads.length,
       };
     } catch (error) {
       if (config.monitoring.verbose) {
         console.error('Error fetching downloads:', error);
       }
-      return { movies: [], tv: [], total: 0 };
+      return { items: [], total: 0 };
     }
   }
 
-  startMonitoring(callback: (data: { movies: MovieDownloadItem[]; tv: TVDownloadItem[]; total: number }) => void): void {
+  startMonitoring(callback: (data: { items: AnyDownloadItem[]; total: number }) => void): void {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
     }
@@ -119,5 +114,60 @@ export class DownloadMonitor {
       clearInterval(this.checkInterval);
       this.checkInterval = undefined;
     }
+  }
+
+  calculateNextRefreshInterval(downloads: { items: AnyDownloadItem[]; total: number }): number {
+    let shortestTimeSeconds = Infinity;
+
+    for (const item of downloads.items) {
+      const timeSeconds = this.parseTimeLeftToSeconds(item.timeLeft || '');
+      if (timeSeconds < shortestTimeSeconds) {
+        shortestTimeSeconds = timeSeconds;
+      }
+    }
+
+    // Apply smart interval rules
+    let interval: number;
+    if (shortestTimeSeconds < 2 * 60) { // < 2 minutes
+      interval = 30 * 1000; // 30 seconds
+    } else if (shortestTimeSeconds < 10 * 60) { // < 10 minutes
+      interval = 60 * 1000; // 1 minute
+    } else if (shortestTimeSeconds < 30 * 60) { // < 30 minutes
+      interval = 2 * 60 * 1000; // 2 minutes
+    } else if (shortestTimeSeconds < 2 * 60 * 60) { // < 2 hours
+      interval = 5 * 60 * 1000; // 5 minutes
+    } else {
+      interval = 10 * 60 * 1000; // 10 minutes for > 2 hours
+    }
+
+    // Enforce bounds
+    return Math.max(config.monitoring.minRefreshInterval, 
+                   Math.min(config.monitoring.maxRefreshInterval, interval));
+  }
+
+  private parseTimeLeftToSeconds(timeLeft: string): number {
+    if (!timeLeft || timeLeft === '∞' || timeLeft.includes('∞')) {
+      return Infinity;
+    }
+
+    // Handle Discord timestamp format
+    if (timeLeft.startsWith('<t:')) {
+      const match = timeLeft.match(/<t:(\d+):/);
+      const timestamp = parseInt(match![1]);
+      const now = Math.floor(Date.now() / 1000);
+      return Math.max(0, timestamp - now);
+    }
+
+    // Handle special case for "< 1m"
+    if (timeLeft.includes('< 1m')) {
+      return 30;
+    }
+    
+    // Parse time strings like "1h 30m", "45m", "2h", "30s"
+    const hours = parseInt((timeLeft.match(/(\d+)h/) || [])[1] || '0');
+    const minutes = parseInt((timeLeft.match(/(\d+)m/) || [])[1] || '0');
+    const seconds = parseInt((timeLeft.match(/(\d+)s/) || [])[1] || '0');
+    
+    return (hours * 3600) + (minutes * 60) + seconds;
   }
 }

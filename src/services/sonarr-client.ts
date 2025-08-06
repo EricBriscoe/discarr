@@ -65,9 +65,15 @@ export class SonarrClient extends BaseClient {
     // Get series and episode info
     const mediaInfo = await this.getMediaInfo(item);
 
+    // Build title with episode name if available
+    let title = `${mediaInfo.series} - S${mediaInfo.season.toString().padStart(2, '0')}E${mediaInfo.episode.toString().padStart(2, '0')}`;
+    if (mediaInfo.episodeTitle) {
+      title += `: ${mediaInfo.episodeTitle}`;
+    }
+
     return {
       id: item.id,
-      title: `${mediaInfo.series} - S${mediaInfo.season.toString().padStart(2, '0')}E${mediaInfo.episode.toString().padStart(2, '0')}`,
+      title,
       series: mediaInfo.series,
       season: mediaInfo.season,
       episode: mediaInfo.episode,
@@ -84,49 +90,29 @@ export class SonarrClient extends BaseClient {
     };
   }
 
-  private async getMediaInfo(queueItem: any): Promise<{ series: string; season: number; episode: number }> {
+  private async getMediaInfo(queueItem: any): Promise<{ series: string; season: number; episode: number; episodeTitle?: string }> {
     const seriesId = queueItem.seriesId;
     const episodeId = queueItem.episodeId;
 
-    let seriesTitle = 'Unknown Series';
-    let seasonNumber = 0;
-    let episodeNumber = 0;
-
-    if (seriesId) {
-      if (!this.seriesCache.has(seriesId)) {
-        try {
-          const series = await this.makeRequest<any>(`/api/v3/series/${seriesId}`);
-          this.seriesCache.set(seriesId, series);
-        } catch (error) {
-          // Cache miss, use default
-        }
-      }
-      const series = this.seriesCache.get(seriesId);
-      if (series) {
-        seriesTitle = series.title;
-      }
+    // Get series info
+    if (!this.seriesCache.has(seriesId)) {
+      const series = await this.makeRequest<any>(`/api/v3/series/${seriesId}`);
+      this.seriesCache.set(seriesId, series);
     }
+    const series = this.seriesCache.get(seriesId);
 
-    if (episodeId) {
-      if (!this.episodeCache.has(episodeId)) {
-        try {
-          const episode = await this.makeRequest<any>(`/api/v3/episode/${episodeId}`);
-          this.episodeCache.set(episodeId, episode);
-        } catch (error) {
-          // Cache miss, use default
-        }
-      }
-      const episode = this.episodeCache.get(episodeId);
-      if (episode) {
-        seasonNumber = episode.seasonNumber || 0;
-        episodeNumber = episode.episodeNumber || 0;
-      }
+    // Get episode info
+    if (!this.episodeCache.has(episodeId)) {
+      const episode = await this.makeRequest<any>(`/api/v3/episode/${episodeId}`);
+      this.episodeCache.set(episodeId, episode);
     }
+    const episode = this.episodeCache.get(episodeId);
 
     return {
-      series: seriesTitle,
-      season: seasonNumber,
-      episode: episodeNumber,
+      series: series.title,
+      season: episode.seasonNumber,
+      episode: episode.episodeNumber,
+      episodeTitle: episode.title && episode.title !== 'TBA' ? episode.title : undefined,
     };
   }
 

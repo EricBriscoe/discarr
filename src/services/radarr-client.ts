@@ -2,6 +2,7 @@ import { BaseClient } from './base-client';
 import { ServiceStatus, MovieDownloadItem } from '../types';
 
 export class RadarrClient extends BaseClient {
+  private movieCache = new Map<number, any>();
   async checkHealth(): Promise<ServiceStatus> {
     const startTime = Date.now();
     
@@ -37,7 +38,9 @@ export class RadarrClient extends BaseClient {
         console.log(`Processing ${allRecords.length} Radarr queue items`);
       }
 
-      return allRecords.map(item => this.processQueueItem(item));
+      return await Promise.all(
+        allRecords.map(item => this.processQueueItem(item))
+      );
     } catch (error) {
       if (this.verbose) {
         console.error('Failed to fetch Radarr queue:', error);
@@ -129,7 +132,7 @@ export class RadarrClient extends BaseClient {
     );
   }
 
-  private processQueueItem(item: any): MovieDownloadItem {
+  private async processQueueItem(item: any): Promise<MovieDownloadItem> {
     const progress = item.size && item.size > 0 && typeof item.sizeleft === 'number'
       ? 100 * (1 - item.sizeleft / item.size)
       : item.progress || 0;
@@ -139,9 +142,12 @@ export class RadarrClient extends BaseClient {
       ? `<t:${Math.floor(new Date(item.estimatedCompletionTime).getTime() / 1000)}:R>`
       : this.parseTimeLeft(item.timeleft || '');
 
+    // Get clean movie title
+    const cleanTitle = await this.getCleanMovieTitle(item);
+
     return {
       id: item.id,
-      title: item.title || 'Unknown Movie',
+      title: cleanTitle,
       progress,
       size,
       sizeLeft: item.sizeleft || 0,
@@ -153,5 +159,22 @@ export class RadarrClient extends BaseClient {
       added: item.added,
       errorMessage: item.errorMessage,
     };
+  }
+
+  private async getCleanMovieTitle(queueItem: any): Promise<string> {
+    const movieId = queueItem.movieId;
+    
+    if (!movieId) {
+      return queueItem.title;
+    }
+
+    if (!this.movieCache.has(movieId)) {
+      const movie = await this.makeRequest<any>(`/api/v3/movie/${movieId}`);
+      this.movieCache.set(movieId, movie);
+    }
+
+    const movie = this.movieCache.get(movieId);
+    const year = movie.year ? ` (${movie.year})` : '';
+    return `${movie.title}${year}`;
   }
 }

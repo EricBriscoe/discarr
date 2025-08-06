@@ -30,6 +30,8 @@ export interface Config {
     checkInterval: number;
     healthCheckInterval: number;
     verbose: boolean;
+    minRefreshInterval: number;
+    maxRefreshInterval: number;
   };
 }
 
@@ -78,6 +80,8 @@ function getConfig(): Config {
       checkInterval: parseInt(process.env.CHECK_INTERVAL || '300') * 1000,
       healthCheckInterval: parseInt(process.env.HEALTH_CHECK_INTERVAL || '60') * 1000,
       verbose: process.env.VERBOSE === 'true',
+      minRefreshInterval: parseInt(process.env.MIN_REFRESH_INTERVAL || '30') * 1000, // 30 seconds
+      maxRefreshInterval: parseInt(process.env.MAX_REFRESH_INTERVAL || '600') * 1000, // 10 minutes
     },
   };
 }
