@@ -58,7 +58,7 @@ export class DiscordEmbedBuilder {
     }
 
     if (healthStatus.qbittorrent) {
-      console.log('🏴‍☠️ Processing qBittorrent section...');
+      console.log('⚡ Processing qBittorrent section...');
       console.log('📊 qBittorrent data:', healthStatus.qbittorrent);
       
       const emoji = this.getStatusEmoji(healthStatus.qbittorrent.status);
@@ -109,7 +109,7 @@ export class DiscordEmbedBuilder {
 
       console.log('➕ Adding qBittorrent field to embed with value:', value);
       embed.addFields({
-        name: '🏴‍☠️ qBittorrent',
+        name: '⚡ qBittorrent',
         value,
         inline: false,
       });
