@@ -1,11 +1,12 @@
-import { Client, GatewayIntentBits, TextChannel, Message, Interaction, REST, Routes, StringSelectMenuInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
+import { Client, GatewayIntentBits, TextChannel, Message, Interaction, REST, Routes, StringSelectMenuInteraction, EmbedBuilder, MessageFlags, ButtonInteraction } from 'discord.js';
 import { HealthMonitor } from './monitoring/health-monitor';
 import { DownloadMonitor } from './monitoring/download-monitor';
 import { DiscordEmbedBuilder } from './discord/embed-builder';
 import { DownloadView } from './discord/download-view';
-import { CleanupCommand, CalendarCommand, SeriesSearchCommand } from './discord/commands';
+import { CleanupCommand, CalendarCommand, SeriesSearchCommand, UnblockCommand } from './discord/commands';
 import { QBittorrentClient } from './services/qbittorrent-client.js';
 import { SonarrClient } from './services/sonarr-client.js';
+import { RadarrClient } from './services/radarr-client.js';
 import config from './config';
 
 export class DiscarrBot {
@@ -16,6 +17,7 @@ export class DiscarrBot {
   private cleanupCommand: CleanupCommand;
   private calendarCommand: CalendarCommand;
   private seriesSearchCommand: SeriesSearchCommand;
+  private unblockCommand: UnblockCommand;
   private channel?: TextChannel;
   private currentHealthMessage?: Message;
   private currentDownloadsMessage?: Message;
@@ -38,6 +40,10 @@ export class DiscarrBot {
     if (!config.services.sonarr) {
       throw new Error('Sonarr configuration is required for calendar and series search commands');
     }
+
+    if (!config.services.radarr) {
+      throw new Error('Radarr configuration is required for unblock command');
+    }
     
     const qbittorrentClient = new QBittorrentClient({
       baseUrl: config.services.qbittorrent.url,
@@ -50,10 +56,17 @@ export class DiscarrBot {
       config.services.sonarr.apiKey,
       config.monitoring.verbose
     );
+
+    const radarrClient = new RadarrClient(
+      config.services.radarr.url,
+      config.services.radarr.apiKey,
+      config.monitoring.verbose
+    );
     
     this.cleanupCommand = new CleanupCommand(qbittorrentClient);
     this.calendarCommand = new CalendarCommand(sonarrClient);
     this.seriesSearchCommand = new SeriesSearchCommand(sonarrClient);
+    this.unblockCommand = new UnblockCommand(radarrClient, sonarrClient);
 
     this.setupEventHandlers();
   }
@@ -82,6 +95,8 @@ export class DiscarrBot {
         try {
           if (this.downloadView.isValidInteraction(interaction.customId)) {
             await this.downloadView.handleButtonInteraction(interaction);
+          } else if (interaction.customId.startsWith('unblock_')) {
+            await this.handleUnblockButtonInteraction(interaction);
           }
         } catch (error) {
           console.error('❌ Error handling button interaction:', error);
@@ -106,6 +121,9 @@ export class DiscarrBot {
             case 'series-search':
               await this.seriesSearchCommand.execute(interaction);
               break;
+            case 'unblock':
+              await this.unblockCommand.execute(interaction);
+              break;
           }
         } catch (error) {
           console.error('❌ Error handling command interaction:', error);
@@ -128,7 +146,8 @@ export class DiscarrBot {
       const commands = [
         this.cleanupCommand.data.toJSON(),
         this.calendarCommand.data.toJSON(),
-        this.seriesSearchCommand.data.toJSON()
+        this.seriesSearchCommand.data.toJSON(),
+        this.unblockCommand.data.toJSON()
       ];
 
       console.log('🔄 Registering slash commands...');
@@ -316,6 +335,60 @@ export class DiscarrBot {
 
         await interaction.editReply({ embeds: [embed] });
       }
+    }
+  }
+
+  private async handleUnblockButtonInteraction(interaction: ButtonInteraction): Promise<void> {
+    const customId = interaction.customId;
+    const parts = customId.split('_'); // Expected format: unblock_{action}_{service}_{itemId}_{currentIndex}
+    
+    if (parts.length !== 5) {
+      console.error('Invalid unblock button customId format:', customId);
+      return;
+    }
+
+    const [, action, service, itemIdStr, currentIndexStr] = parts;
+    const itemId = parseInt(itemIdStr);
+    const currentIndex = parseInt(currentIndexStr);
+
+    if (isNaN(itemId) || isNaN(currentIndex)) {
+      console.error('Invalid itemId or currentIndex in button interaction:', customId);
+      return;
+    }
+
+    // Get the original message to extract blocked items data
+    // For simplicity, we'll fetch blocked items again
+    try {
+      const [radarrBlocked, sonarrBlocked] = await Promise.all([
+        this.unblockCommand['radarrClient'].getImportBlockedItems(),
+        this.unblockCommand['sonarrClient'].getImportBlockedItems()
+      ]);
+
+      const allBlocked = [
+        ...radarrBlocked.map(item => ({ ...item, service: 'radarr' as const })),
+        ...sonarrBlocked.map(item => ({ ...item, service: 'sonarr' as const }))
+      ];
+
+      // Initialize processed count - in a real implementation you'd want to track this state
+      const processedCount = { approved: 0, rejected: 0, skipped: 0 };
+
+      await this.unblockCommand.handleButtonInteraction(
+        interaction, 
+        action, 
+        service as 'radarr' | 'sonarr', 
+        itemId, 
+        currentIndex,
+        allBlocked,
+        processedCount
+      );
+
+    } catch (error) {
+      console.error('Error handling unblock button interaction:', error);
+      
+      await interaction.reply({
+        content: '❌ Error processing request. Please try the /unblock command again.',
+        ephemeral: true
+      });
     }
   }
 

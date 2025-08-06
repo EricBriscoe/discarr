@@ -150,6 +150,11 @@ export class DownloadMonitor {
       return Infinity;
     }
 
+    // Handle import blocked items - treat as infinite since they need manual action
+    if (timeLeft.includes('Manual action required')) {
+      return Infinity;
+    }
+
     // Handle Discord timestamp format
     if (timeLeft.startsWith('<t:')) {
       const match = timeLeft.match(/<t:(\d+):/);

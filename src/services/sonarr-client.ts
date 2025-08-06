@@ -58,9 +58,16 @@ export class SonarrClient extends BaseClient {
       : item.progress || 0;
 
     const size = (item.size || 0) / (1024 * 1024 * 1024); // Convert to GB
-    const timeLeft = item.estimatedCompletionTime 
-      ? `<t:${Math.floor(new Date(item.estimatedCompletionTime).getTime() / 1000)}:R>`
-      : this.parseTimeLeft(item.timeleft || '');
+    
+    // Handle import blocked items with special ETA
+    let timeLeft: string;
+    if (item.trackedDownloadState === 'importBlocked') {
+      timeLeft = 'Manual action required';
+    } else if (item.estimatedCompletionTime) {
+      timeLeft = `<t:${Math.floor(new Date(item.estimatedCompletionTime).getTime() / 1000)}:R>`;
+    } else {
+      timeLeft = this.parseTimeLeft(item.timeleft || '');
+    }
 
     // Get series and episode info
     const mediaInfo = await this.getMediaInfo(item);
@@ -81,7 +88,7 @@ export class SonarrClient extends BaseClient {
       size,
       sizeLeft: item.sizeleft || 0,
       timeLeft,
-      status: item.trackedDownloadState || item.status,
+      status: item.status,
       protocol: item.protocol || 'unknown',
       downloadClient: item.downloadClient || 'unknown',
       service: 'sonarr',
@@ -378,5 +385,41 @@ export class SonarrClient extends BaseClient {
       }
       return false;
     }
+  }
+
+  async getDetailedBlockedItem(id: number): Promise<any> {
+    const allRecords = await this.getAllPaginated<any>('/api/v3/queue', {
+      includeUnknownSeriesItems: false,
+      includeSeries: true,
+      includeEpisode: true
+    });
+
+    const item = allRecords.find(record => record.id === id && 
+      (record.trackedDownloadState === 'importBlocked' || record.status === 'importBlocked'));
+    
+    if (!item) {
+      throw new Error(`Import blocked item with ID ${id} not found`);
+    }
+
+    return item;
+  }
+
+  async approveImport(id: number): Promise<boolean> {
+    // Get the detailed item info first
+    const item = await this.getDetailedBlockedItem(id);
+    
+    // Use manual import endpoint to approve
+    const response = await this.makeRequest('/api/v3/manualimport', 'PUT', undefined, [{
+      id: item.downloadId,
+      seriesId: item.seriesId,
+      episodeIds: [item.episodeId],
+      series: item.series,
+      episodes: [item.episode],
+      quality: item.quality,
+      languages: item.languages,
+      downloadId: item.downloadId
+    }]);
+
+    return true;
   }
 }
