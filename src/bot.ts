@@ -20,6 +20,7 @@ export class DiscarrBot {
   private currentHealthMessage?: Message;
   private currentDownloadsMessage?: Message;
   private healthCheckInterval?: NodeJS.Timeout;
+  private downloadCheckTimeout?: NodeJS.Timeout;
 
   constructor() {
     this.client = new Client({
@@ -174,8 +175,7 @@ export class DiscarrBot {
       // Create initial downloads message with pagination
       const downloads = await this.downloadMonitor.getActiveDownloads();
       const { embed: downloadsEmbed, components } = this.downloadView.updateData(
-        downloads.movies,
-        downloads.tv,
+        downloads.items,
         downloads.total
       );
       this.currentDownloadsMessage = await this.channel.send({ 
@@ -204,12 +204,20 @@ export class DiscarrBot {
       }
     }, config.monitoring.healthCheckInterval);
 
-    // Download monitoring with pagination
-    this.downloadMonitor.startMonitoring(async (downloads) => {
+    // Start smart download monitoring
+    this.startSmartDownloadMonitoring();
+
+    console.log('🔄 Monitoring started');
+  }
+
+  private startSmartDownloadMonitoring(): void {
+    const updateDownloads = async () => {
       try {
+        const downloads = await this.downloadMonitor.getActiveDownloads();
+        
+        // Update the Discord message
         const { embed: downloadsEmbed, components } = this.downloadView.updateData(
-          downloads.movies,
-          downloads.tv,
+          downloads.items,
           downloads.total
         );
 
@@ -219,12 +227,25 @@ export class DiscarrBot {
             components
           });
         }
-      } catch (error) {
-        console.error('❌ Error updating downloads:', error);
-      }
-    });
 
-    console.log('🔄 Monitoring started');
+        // Calculate smart refresh interval
+        const nextInterval = this.downloadMonitor.calculateNextRefreshInterval(downloads);
+        
+        if (config.monitoring.verbose) {
+          console.log(`📊 Downloads updated. Next refresh in ${Math.round(nextInterval / 1000)}s`);
+        }
+
+        // Schedule next update with dynamic interval
+        this.downloadCheckTimeout = setTimeout(updateDownloads, nextInterval);
+
+      } catch (error) {
+        console.error('❌ Error in smart download monitoring:', error);
+        throw error;
+      }
+    };
+
+    // Start immediately
+    updateDownloads();
   }
 
   private async handleSeriesSearchMenu(interaction: StringSelectMenuInteraction): Promise<void> {
@@ -303,6 +324,10 @@ export class DiscarrBot {
     
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
+    }
+    
+    if (this.downloadCheckTimeout) {
+      clearTimeout(this.downloadCheckTimeout);
     }
     
     this.downloadMonitor.stopMonitoring();

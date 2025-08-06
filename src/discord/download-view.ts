@@ -1,11 +1,10 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, EmbedBuilder } from 'discord.js';
 import { PaginationManager } from './pagination';
-import { MovieDownloadItem, TVDownloadItem } from '../types';
+import { AnyDownloadItem } from '../types';
 
 export class DownloadView {
   private paginationManager: PaginationManager;
-  private movies: MovieDownloadItem[] = [];
-  private tv: TVDownloadItem[] = [];
+  private items: AnyDownloadItem[] = [];
   private total = 0;
 
   constructor() {
@@ -15,15 +14,14 @@ export class DownloadView {
     });
   }
 
-  updateData(movies: MovieDownloadItem[], tv: TVDownloadItem[], total: number): {
+  updateData(items: AnyDownloadItem[], total: number): {
     embed: EmbedBuilder;
     components: ActionRowBuilder<ButtonBuilder>[];
   } {
-    this.movies = movies;
-    this.tv = tv;
+    this.items = items;
     this.total = total;
 
-    return this.paginationManager.createPaginatedEmbed(movies, tv, total);
+    return this.paginationManager.createPaginatedEmbed(items, total);
   }
 
   async handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
@@ -36,8 +34,7 @@ export class DownloadView {
     
     if (changed) {
       const { embed, components } = this.paginationManager.createPaginatedEmbed(
-        this.movies,
-        this.tv,
+        this.items,
         this.total
       );
 
