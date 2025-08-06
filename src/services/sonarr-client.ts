@@ -53,17 +53,26 @@ export class SonarrClient extends BaseClient {
   }
 
   private async processQueueItem(item: any): Promise<TVDownloadItem> {
+
     const progress = item.size && item.size > 0 && typeof item.sizeleft === 'number'
       ? 100 * (1 - item.sizeleft / item.size)
       : item.progress || 0;
 
     const size = (item.size || 0) / (1024 * 1024 * 1024); // Convert to GB
     
-    // Handle import blocked items with special ETA
+    // Handle ETA based on status and download state
     let timeLeft: string;
-    if (item.trackedDownloadState === 'importBlocked') {
+    if (item.estimatedCompletionTime && (item.status === 'downloading' || item.status === 'queued')) {
+      // If actively downloading/queued with completion time, show ETA regardless of import blocked state
+      timeLeft = `<t:${Math.floor(new Date(item.estimatedCompletionTime).getTime() / 1000)}:R>`;
+    } else if (item.trackedDownloadState === 'importBlocked' && item.status === 'completed') {
+      // Only show manual action required for completed items that are import blocked
       timeLeft = 'Manual action required';
+    } else if (item.status === 'completed') {
+      // If status is completed but not import blocked, it should be processing
+      timeLeft = 'Processing...';
     } else if (item.estimatedCompletionTime) {
+      // Fallback to estimated completion time
       timeLeft = `<t:${Math.floor(new Date(item.estimatedCompletionTime).getTime() / 1000)}:R>`;
     } else {
       timeLeft = this.parseTimeLeft(item.timeleft || '');
@@ -78,7 +87,7 @@ export class SonarrClient extends BaseClient {
       title += `: ${mediaInfo.episodeTitle}`;
     }
 
-    return {
+    const result = {
       id: item.id,
       title,
       series: mediaInfo.series,
@@ -91,10 +100,12 @@ export class SonarrClient extends BaseClient {
       status: item.status,
       protocol: item.protocol || 'unknown',
       downloadClient: item.downloadClient || 'unknown',
-      service: 'sonarr',
+      service: 'sonarr' as const,
       added: item.added,
       errorMessage: item.errorMessage,
     };
+
+    return result;
   }
 
   private async getMediaInfo(queueItem: any): Promise<{ series: string; season: number; episode: number; episodeTitle?: string }> {
