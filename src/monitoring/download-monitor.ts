@@ -41,6 +41,7 @@ export class DownloadMonitor {
         }
       });
 
+
       // Sort by time left (shortest first) - no limiting for pagination
       const sortedDownloads = allDownloads
         .sort((a, b) => {
