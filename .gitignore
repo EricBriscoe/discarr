@@ -70,3 +70,12 @@ pids
 .env.local
 .env.development
 .env.production
+.env.backup
+
+# TypeScript JS artifacts emitted into src by tsc
+apps/*/src/**/*.js
+apps/*/src/**/*.js.map
+apps/*/src/**/*.d.ts
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts

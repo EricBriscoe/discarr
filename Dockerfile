@@ -1,41 +1,45 @@
-FROM node:18-alpine
-
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S discarr -u 1001
-
+FROM node:18-alpine AS base
 WORKDIR /app
 
-# Set npm cache location (don't set NODE_ENV=production yet as it prevents devDependencies)
-ENV NPM_CONFIG_CACHE=/tmp/.npm
-
-# Copy package files and install ALL dependencies (including devDependencies)
-COPY package*.json ./
+# Install dependencies (monorepo)
+COPY package.json ./
+COPY package-lock.json ./
+COPY tsconfig.base.json ./
+COPY packages/core/package.json packages/core/package.json
+COPY packages/discord-bot/package.json packages/discord-bot/package.json
+COPY apps/server/package.json apps/server/package.json
+COPY apps/web/package.json apps/web/package.json
 RUN npm ci
 
-# Copy source code and build the application
+# Build all packages
 COPY . .
 RUN npm run build
 
-# Now set production environment and remove devDependencies to minimize image size
+FROM node:18-alpine AS runtime
 ENV NODE_ENV=production
-RUN npm prune --production && npm cache clean --force
+WORKDIR /app
 
-# Remove source files and keep only built artifacts
-RUN rm -rf src/ tsconfig.json .eslintrc.* prettier.config.* && \
-    find . -name "*.ts" -not -path "./node_modules/*" -delete && \
-    find . -name "*.map" -delete
+# Copy package manifests and install production deps
+COPY package.json ./
+COPY package-lock.json ./
+COPY packages/core/package.json packages/core/package.json
+COPY packages/discord-bot/package.json packages/discord-bot/package.json
+COPY apps/server/package.json apps/server/package.json
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci --omit=dev
 
-# Change ownership to non-root user
+# Copy built artifacts
+COPY --from=base /app/packages /app/packages
+COPY --from=base /app/apps/server/dist /app/apps/server/dist
+COPY --from=base /app/apps/web/dist /app/apps/web/dist
+
+# Security: non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -S discarr -u 1001
 RUN chown -R discarr:nodejs /app
 USER discarr
 
-# Create a volume mount point for persistent data
-VOLUME ["/app/config"]
-
-# Health check for Discord bot - check if process is running and can import config
+EXPOSE 8080
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD node -e "try { require('./dist/config.js'); process.exit(0); } catch(e) { process.exit(1); }"
+    CMD node -e "try { require('./apps/server/dist/server.js'); process.exit(0); } catch(e) { process.exit(1); }"
 
-# Run the application directly with node instead of npm for better signal handling
-CMD ["node", "dist/index.js"]
+CMD ["node", "apps/server/dist/server.js"]

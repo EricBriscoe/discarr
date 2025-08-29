@@ -1,13 +1,14 @@
-version: '3'
-
 services:
   discarr:
     build: .
     container_name: discarr
     restart: unless-stopped
+    ports:
+      - "8080:8080"
     volumes:
       - ./config:/app/config
     env_file:
       - ./config/.env
     environment:
       - TZ=America/Chicago
+    # Health handled by Dockerfile healthcheck
