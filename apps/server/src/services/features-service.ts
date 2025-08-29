@@ -82,9 +82,10 @@ export class FeaturesService {
       const nowSec = Math.floor(Date.now() / 1000);
       const stale = torrents.filter(t => {
         const isStalledDl = t.state === 'stalledDL';
+        const isMetaDl = t.state === 'metaDL';
         const addedOn = (t as any).added_on as number | undefined;
         const ageOk = typeof addedOn === 'number' ? (nowSec - addedOn) >= thresholdSec : false;
-        return isStalledDl && ageOk;
+        return (isStalledDl || isMetaDl) && ageOk;
       });
       const hashes = stale.map(t => t.hash);
       let removed = 0;

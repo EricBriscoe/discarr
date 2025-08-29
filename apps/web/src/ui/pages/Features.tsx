@@ -115,7 +115,7 @@ export default function Features() {
             <input type="checkbox" checked={stEnabled} onChange={(e)=>setStEnabled(e.target.checked)} disabled={saving || loading} /> Enable
           </label>
         </div>
-        <div style={{color:'var(--muted)', marginBottom:'.5rem'}}>Removes Sonarr/Radarr torrents stuck in stalled download state older than the minimum age.</div>
+        <div style={{color:'var(--muted)', marginBottom:'.5rem'}}>Removes torrents stuck in stalled download or metadata state older than the minimum age.</div>
         {s && (
           <div className="grid">
             <div>
