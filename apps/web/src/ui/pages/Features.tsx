@@ -151,7 +151,7 @@ export default function Features() {
           <div className="grid">
             <div>
               <label>Host</label>
-              <input className="input" placeholder="lelantos.feralhosting.com" value={omHost} onChange={(e:any)=>setOmHost(e.target.value)} />
+              <input className="input" placeholder="hostname or IP" value={omHost} onChange={(e:any)=>setOmHost(e.target.value)} />
             </div>
             <div>
               <label>Port</label>
@@ -159,7 +159,7 @@ export default function Features() {
             </div>
             <div>
               <label>Username</label>
-              <input className="input" placeholder="seed" value={omUser} onChange={(e:any)=>setOmUser(e.target.value)} />
+              <input className="input" placeholder="username" value={omUser} onChange={(e:any)=>setOmUser(e.target.value)} />
             </div>
             <div>
               <label>Password</label>

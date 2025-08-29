@@ -10,5 +10,5 @@ services:
     env_file:
       - ./config/.env
     environment:
-      - TZ=America/Chicago
+      - TZ=${TZ:-UTC}
     # Health handled by Dockerfile healthcheck
