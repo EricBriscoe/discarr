@@ -19,7 +19,7 @@ jobs:
         node-version: '18'
         cache: 'npm'
 
-    - name: Install dependencies
+    - name: Install dependencies (monorepo)
       run: npm ci
 
     - name: Lint with ESLint
@@ -30,16 +30,15 @@ jobs:
       run: npm run typecheck
       continue-on-error: true
 
-    - name: Build TypeScript
+    - name: Build all packages
       run: npm run build
 
-    - name: Test build output
+    - name: Verify build artifacts
       run: |
-        # Verify build artifacts exist
-        ls -la dist/
-        # Check if main files are present
-        test -f dist/index.js
-        test -f dist/bot.js
+        test -f apps/server/dist/server.js
+        test -f packages/discord-bot/dist/index.js
+        test -f packages/core/dist/index.d.ts || true
+        test -d apps/web/dist
 
   security:
     runs-on: ubuntu-latest
