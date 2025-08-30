@@ -173,11 +173,32 @@ export class QBittorrentClient {
     return this.authenticatedRequest(`/api/v2/torrents/files?${params.toString()}`);
   }
 
+  async getErroredTorrents(): Promise<Array<Pick<QBittorrentTorrent, 'hash' | 'name' | 'state' | 'category'>>> {
+    const torrents = await this.getTorrents();
+    return torrents
+      .filter(t => t.state === 'error' || t.state === 'missingFiles')
+      .map(t => ({ hash: t.hash, name: t.name, state: t.state, category: t.category }));
+  }
+
+  async recheckTorrents(hashes: string[]): Promise<{ success: boolean; hash: string }[]> {
+    if (!hashes || hashes.length === 0) return [];
+    const formData = new URLSearchParams();
+    formData.append('hashes', hashes.join('|'));
+    try {
+      await this.authenticatedRequest('/api/v2/torrents/recheck', 'POST', formData);
+      return hashes.map(hash => ({ success: true, hash }));
+    } catch (_e) {
+      return hashes.map(hash => ({ success: false, hash }));
+    }
+  }
+
   async getSeedinOrStalledTorrentsWithLabels(): Promise<{hash: string, name: string, category: string, state: string}[]> {
     const torrents = await this.getTorrents();
     return torrents
       .filter(torrent => {
-        const hasRequiredCategory = torrent.category && (torrent.category === 'sonarr' || torrent.category === 'radarr');
+        const cat = (torrent.category || '').toLowerCase();
+        const tags = (torrent.tags || '').toLowerCase();
+        const hasRequiredCategory = /sonarr|radarr/.test(cat) || /sonarr|radarr/.test(tags);
         const isTargetState = torrent.state === 'stalledUP' || torrent.state === 'stalledDL' || torrent.state === 'metaDL' || torrent.state === 'uploading' || torrent.state === 'queuedUP';
         return hasRequiredCategory && isTargetState;
       })

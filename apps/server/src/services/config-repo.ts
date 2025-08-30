@@ -27,6 +27,12 @@ type FeatureSettings = {
     // cumulative number of torrents removed by this feature
     totalRemoved?: number;
   }
+  qbittorrentRecheckErrored?: {
+    enabled?: boolean;
+    intervalMinutes?: number; // default 30
+    lastAttempted?: number; // snapshot only; runtime state is tracked elsewhere
+    lastRechecked?: number;
+  }
   orphanedMonitor?: {
     enabled?: boolean;
     intervalMinutes?: number; // default 60
@@ -168,6 +174,12 @@ export class ConfigRepo {
         minAgeMinutes: f.stalledDownloadCleanup?.minAgeMinutes ?? 60,
         totalRemoved: f.stalledDownloadCleanup?.totalRemoved ?? 0,
       },
+      qbittorrentRecheckErrored: {
+        enabled: f.qbittorrentRecheckErrored?.enabled ?? false,
+        intervalMinutes: f.qbittorrentRecheckErrored?.intervalMinutes ?? 30,
+        lastAttempted: f.qbittorrentRecheckErrored?.lastAttempted ?? 0,
+        lastRechecked: f.qbittorrentRecheckErrored?.lastRechecked ?? 0,
+      },
       orphanedMonitor: {
         enabled: f.orphanedMonitor?.enabled ?? false,
         intervalMinutes: f.orphanedMonitor?.intervalMinutes ?? 60,
@@ -203,6 +215,12 @@ export class ConfigRepo {
       if (Array.isArray(dirs)) {
         (settings.features.orphanedMonitor as any).directories = dirs.map((d: string)=> (d||'').trim()).filter((d: string)=>d.length>0);
       }
+    }
+    if (payload.qbittorrentRecheckErrored) {
+      settings.features.qbittorrentRecheckErrored = {
+        ...(settings.features.qbittorrentRecheckErrored || {}),
+        ...payload.qbittorrentRecheckErrored,
+      } as any;
     }
     this.writeSettings(settings);
   }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState } from '../api';
+import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState, runRecheckErroredNow } from '../api';
 
 export default function Features() {
   const [state, setState] = useState<FeaturesState | null>(null);
@@ -22,6 +22,8 @@ export default function Features() {
   const [omInterval, setOmInterval] = useState<number>(60);
   const [omDeleteEmpty, setOmDeleteEmpty] = useState(false);
   const [omDirsText, setOmDirsText] = useState('');
+  const [rqEnabled, setRqEnabled] = useState(false);
+  const [rqInterval, setRqInterval] = useState<number>(30);
 
   async function load() {
     setLoading(true); setError(null);
@@ -41,6 +43,8 @@ export default function Features() {
       setOmInterval(s.orphanedMonitor?.intervalMinutes ?? 60);
       setOmDeleteEmpty(!!s.orphanedMonitor?.deleteEmptyDirs);
       setOmDirsText((s.orphanedMonitor?.directories || []).join('\n'));
+      setRqEnabled(!!s.qbittorrentRecheckErrored?.enabled);
+      setRqInterval(s.qbittorrentRecheckErrored?.intervalMinutes ?? 30);
     }
     catch (e:any) { setError(e.message || 'Failed to load features'); }
     finally { setLoading(false); }
@@ -56,6 +60,7 @@ export default function Features() {
       const payload: any = {
         botMonitoring: { enabled: botEnabled },
         stalledDownloadCleanup: { enabled: stEnabled, intervalMinutes: stInterval, minAgeMinutes: stMinAge },
+        qbittorrentRecheckErrored: { enabled: rqEnabled, intervalMinutes: rqInterval },
         orphanedMonitor: {
           enabled: omEnabled,
           intervalMinutes: omInterval,
@@ -135,6 +140,31 @@ export default function Features() {
             s.lastRunResult.error ? <span className="pill err">Error: {s.lastRunResult.error}</span> : <span className="pill ok">Removed {s.lastRunResult.removed}/{s.lastRunResult.attempted}</span>
           )}
           {typeof s?.totalRemoved === 'number' && <span className="pill ok">Total cleaned up: {s.totalRemoved}</span>}
+        </div>
+      </section>
+
+      <section className="card" style={{marginTop:'1rem'}}>
+        <div className="row" style={{justifyContent:'space-between'}}>
+          <h3>qBittorrent: Recheck Errored Torrents</h3>
+          <label>
+            <input type="checkbox" checked={rqEnabled} onChange={(e)=>setRqEnabled(e.target.checked)} disabled={saving || loading} /> Enable
+          </label>
+        </div>
+        <div style={{color:'var(--muted)', marginBottom:'.5rem'}}>Rechecks torrents in error/missing files state. Use Run Now for manual, or enable scheduling with an interval.</div>
+        <div className="grid">
+          <div>
+            <label>Interval (minutes)</label>
+            <input className="input" type="number" min={1} value={rqInterval} onChange={(e:any)=>setRqInterval(parseInt(e.target.value||'30',10))} />
+          </div>
+        </div>
+        <div className="row" style={{marginTop:'.5rem'}}>
+          <button className="primary" onClick={async ()=>{ setRunning(true); try { const r = await runRecheckErroredNow(); await load(); window.alert(`Rechecked ${r.rechecked}/${r.attempted}`); } catch (e:any) { window.alert(e.message||'Failed'); } finally { setRunning(false); } }} disabled={running || loading}>Run Now</button>
+          {state?.qbittorrentRecheckErrored?.lastRunAt && <span className="pill ok">Last run: {new Date(state.qbittorrentRecheckErrored.lastRunAt).toLocaleString()}</span>}
+          {state?.qbittorrentRecheckErrored?.lastRunResult && (
+            state.qbittorrentRecheckErrored.lastRunResult.error
+              ? <span className="pill err">Error: {state.qbittorrentRecheckErrored.lastRunResult.error}</span>
+              : <span className="pill ok">Rechecked {state.qbittorrentRecheckErrored.lastRunResult.rechecked}/{state.qbittorrentRecheckErrored.lastRunResult.attempted}</span>
+          )}
         </div>
       </section>
 

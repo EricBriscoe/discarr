@@ -9,12 +9,15 @@ export class FeaturesService {
   private configRepo: ConfigRepo;
   private cleanupTimer?: NodeJS.Timeout;
   private orphanTimer?: NodeJS.Timeout;
+  private recheckTimer?: NodeJS.Timeout;
 
   // runtime status
   private lastCleanupRunAt?: string; // ISO
   private lastCleanupResult?: CleanupResult;
   private lastOrphanRunAt?: string;
   private lastOrphanResult?: { scanned: number; orphaned: number; deleted: number; errors?: string[] };
+  private lastRecheckRunAt?: string;
+  private lastRecheckResult?: { attempted: number; rechecked: number; error?: string };
 
   constructor(configRepo: ConfigRepo) {
     this.configRepo = configRepo;
@@ -40,6 +43,10 @@ export class FeaturesService {
       clearInterval(this.orphanTimer);
       this.orphanTimer = undefined;
     }
+    if (this.recheckTimer) {
+      clearInterval(this.recheckTimer);
+      this.recheckTimer = undefined;
+    }
     if (features.stalledDownloadCleanup.enabled) {
       const everyMs = Math.max(1, features.stalledDownloadCleanup.intervalMinutes || 15) * 60_000;
       this.cleanupTimer = setInterval(() => {
@@ -51,6 +58,12 @@ export class FeaturesService {
       const everyMs = Math.max(1, features.orphanedMonitor.intervalMinutes || 60) * 60_000;
       this.orphanTimer = setInterval(() => {
         this.runOrphanedMonitor().catch(() => void 0);
+      }, everyMs);
+    }
+    if (features.qbittorrentRecheckErrored.enabled) {
+      const everyMs = Math.max(1, features.qbittorrentRecheckErrored.intervalMinutes || 30) * 60_000;
+      this.recheckTimer = setInterval(() => {
+        this.runRecheckErrored().catch(() => void 0);
       }, everyMs);
     }
   }
@@ -65,7 +78,12 @@ export class FeaturesService {
     this.applyScheduling();
   }
 
-  async runStalledCleanup(): Promise<CleanupResult> {
+  async updateRecheckSettings(p: { qbittorrentRecheckErrored?: { enabled?: boolean; intervalMinutes?: number } }) {
+    this.configRepo.updateFeatures({ qbittorrentRecheckErrored: p.qbittorrentRecheckErrored });
+    this.applyScheduling();
+  }
+
+  async runStalledCleanup(p?: { ignoreMinAge?: boolean }): Promise<CleanupResult> {
     const cfg = this.configRepo.getEffectiveConfig();
     const f = this.configRepo.getFeatures();
     const minAgeMinutes = f.stalledDownloadCleanup.minAgeMinutes ?? 60;
@@ -84,6 +102,9 @@ export class FeaturesService {
         const isStalledDl = t.state === 'stalledDL';
         const isMetaDl = t.state === 'metaDL';
         const addedOn = (t as any).added_on as number | undefined;
+        if (p?.ignoreMinAge) {
+          return (isStalledDl || isMetaDl);
+        }
         const ageOk = typeof addedOn === 'number' ? (nowSec - addedOn) >= thresholdSec : false;
         return (isStalledDl || isMetaDl) && ageOk;
       });
@@ -126,6 +147,12 @@ export class FeaturesService {
         lastRunAt: this.lastCleanupRunAt,
         lastRunResult: this.lastCleanupResult,
       },
+      qbittorrentRecheckErrored: {
+        enabled: f.qbittorrentRecheckErrored.enabled,
+        intervalMinutes: f.qbittorrentRecheckErrored.intervalMinutes,
+        lastRunAt: this.lastRecheckRunAt,
+        lastRunResult: this.lastRecheckResult,
+      },
       orphanedMonitor: {
         enabled: f.orphanedMonitor.enabled,
         intervalMinutes: f.orphanedMonitor.intervalMinutes,
@@ -142,6 +169,33 @@ export class FeaturesService {
         lastRunResult: this.lastOrphanResult,
       }
     };
+  }
+
+  async runRecheckErrored(): Promise<{ attempted: number; rechecked: number; error?: string }> {
+    const cfg = this.configRepo.getEffectiveConfig();
+    if (!cfg.services.qbittorrent) {
+      const out = { attempted: 0, rechecked: 0, error: 'qBittorrent not configured' };
+      this.lastRecheckRunAt = new Date().toISOString();
+      this.lastRecheckResult = out;
+      return out;
+    }
+    try {
+      const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
+      const errored = await qb.getErroredTorrents();
+      const hashes = errored.map(t => t.hash);
+      const result = await qb.recheckTorrents(hashes);
+      const out = { attempted: hashes.length, rechecked: result.filter(r => r.success).length };
+      this.lastRecheckRunAt = new Date().toISOString();
+      this.lastRecheckResult = out;
+      // snapshot last result into settings for visibility across restarts (optional)
+      try { this.configRepo.updateFeatures({ qbittorrentRecheckErrored: { lastAttempted: out.attempted, lastRechecked: out.rechecked } }); } catch {}
+      return out;
+    } catch (e:any) {
+      const out = { attempted: 0, rechecked: 0, error: e?.message || 'Unknown error' };
+      this.lastRecheckRunAt = new Date().toISOString();
+      this.lastRecheckResult = out;
+      return out;
+    }
   }
 
   async runOrphanedMonitor(): Promise<{ scanned: number; orphaned: number; deleted: number; errors?: string[] }> {
@@ -170,18 +224,34 @@ export class FeaturesService {
       const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
       const torrents = await qb.getTorrents();
       const expected = new Set<string>();
-      // Build expected absolute file paths using save_path/content_path and files list
-      for (const t of torrents) {
-        const files = await qb.getTorrentFiles(t.hash).catch((_e:any)=>[] as any[]);
-        const base = (t.save_path && t.save_path.trim().length>0) ? t.save_path! : (t.content_path ? path.dirname(t.content_path) : '');
+      // Build expected absolute file paths using save_path/content_path and files list.
+      // Fetch file lists concurrently for efficiency.
+      const fileLists = await Promise.allSettled(
+        torrents.map(async (t) => {
+          const files = await qb.getTorrentFiles(t.hash).catch((_e:any)=>[] as any[]);
+          return { t, files };
+        })
+      );
+      for (const res of fileLists) {
+        if (res.status !== 'fulfilled') continue;
+        const { t, files } = res.value as { t: any; files: any[] };
+        const base = (t.save_path && t.save_path.trim().length>0) ? t.save_path as string : (t.content_path ? path.dirname(t.content_path as string) : '');
         if (!base) continue;
-        for (const f of files as any[]) {
-          const abs = path.posix.normalize(path.posix.join(base.replaceAll('\\','/'), (f.name || '').replaceAll('\\','/')));
+        const normBase = base.replaceAll('\\','/');
+        for (const f of files) {
+          const rel = (f.name || '').replaceAll('\\','/');
+          const abs = path.posix.normalize(path.posix.join(normBase, rel));
           expected.add(abs);
+          // Include in-progress variants so we don't mark them orphaned
+          expected.add(`${abs}.!qB`);
+          expected.add(`${abs}.!qb`);
         }
         // If no files returned (rare), include content_path itself
         if ((files as any[]).length === 0 && t.content_path) {
-          expected.add(path.posix.normalize(t.content_path.replaceAll('\\','/')));
+          const cp = path.posix.normalize((t.content_path as string).replaceAll('\\','/'));
+          expected.add(cp);
+          expected.add(`${cp}.!qB`);
+          expected.add(`${cp}.!qb`);
         }
       }
 
@@ -232,6 +302,11 @@ export class FeaturesService {
               scanned++;
               const norm = path.posix.normalize(it.path);
               filesInDir.push(norm);
+              // Skip files with qBittorrent in-progress markers (e.g., .!qB/.!qb)
+              const base = path.posix.basename(norm);
+              const lower = base.toLowerCase();
+              const isQbInProgress = lower.endsWith('.!qb');
+              if (isQbInProgress) continue;
               if (!expected.has(norm)) {
                 orphaned++;
                 try {

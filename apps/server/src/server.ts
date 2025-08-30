@@ -101,6 +101,19 @@ app.post('/api/actions/cleanup', async (_req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// qBittorrent: Recheck all errored torrents
+app.post('/api/actions/qbit/recheck-errored', async (_req, res) => {
+  try {
+    const cfg = configRepo.getEffectiveConfig();
+    if (!cfg.services.qbittorrent) return res.status(400).json({ error: 'qBittorrent not configured' });
+    const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
+    const errored = await qb.getErroredTorrents();
+    const hashes = errored.map(t => t.hash);
+    const result = await qb.recheckTorrents(hashes);
+    res.json({ attempted: hashes.length, rechecked: result.filter(r => r.success).length });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/actions/series-search', async (req, res) => {
   try {
     const seriesId = parseInt(req.body?.seriesId);
@@ -132,6 +145,9 @@ app.put('/api/features', async (req, res) => {
     await featuresService.updateSettings({
       stalledDownloadCleanup: payload?.stalledDownloadCleanup,
     });
+    if (payload?.qbittorrentRecheckErrored) {
+      await featuresService.updateRecheckSettings({ qbittorrentRecheckErrored: payload.qbittorrentRecheckErrored });
+    }
     if (payload?.orphanedMonitor) {
       await featuresService.updateOrphanSettings({ orphanedMonitor: payload.orphanedMonitor });
     }
@@ -153,7 +169,7 @@ app.put('/api/features', async (req, res) => {
 
 app.post('/api/features/stalled-cleanup/run', async (_req, res) => {
   try {
-    const result = await featuresService.runStalledCleanup();
+    const result = await featuresService.runStalledCleanup({ ignoreMinAge: true });
     res.json(result);
   } catch (e:any) { res.status(500).json({ error: e.message }); }
 });
@@ -161,6 +177,14 @@ app.post('/api/features/stalled-cleanup/run', async (_req, res) => {
 app.post('/api/features/orphaned-monitor/run', async (_req, res) => {
   try {
     const result = await featuresService.runOrphanedMonitor();
+    res.json(result);
+  } catch (e:any) { res.status(500).json({ error: e.message }); }
+});
+
+// qBittorrent: scheduled recheck run-now
+app.post('/api/features/recheck-errored/run', async (_req, res) => {
+  try {
+    const result = await featuresService.runRecheckErrored();
     res.json(result);
   } catch (e:any) { res.status(500).json({ error: e.message }); }
 });
