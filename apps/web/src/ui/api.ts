@@ -79,6 +79,12 @@ export interface FeaturesState {
     lastRunAt?: string;
     lastRunResult?: { attempted: number; removed: number; error?: string };
   };
+  qbittorrentRecheckErrored: {
+    enabled: boolean;
+    intervalMinutes: number;
+    lastRunAt?: string;
+    lastRunResult?: { attempted: number; rechecked: number; error?: string };
+  };
   botMonitoring: {
     enabled: boolean;
     running: boolean;
@@ -116,5 +122,11 @@ export async function runStalledCleanupNow() {
 export async function runOrphanedMonitorNow() {
   const res = await fetch(`${BASE}/api/features/orphaned-monitor/run`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to run orphaned monitor');
+  return res.json();
+}
+
+export async function runRecheckErroredNow() {
+  const res = await fetch(`${BASE}/api/features/recheck-errored/run`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to run recheck');
   return res.json();
 }
