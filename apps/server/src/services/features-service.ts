@@ -261,7 +261,8 @@ export class FeaturesService {
           break;
         }
       }
-      const setDownloads = Math.max(0, canStart);
+      // Ensure at least 1 active download slot
+      const setDownloads = Math.max(1, canStart);
       const setUploads = Math.max(0, aq.maxActiveTorrents || 0);
       const setTorrents = Math.max(0, aq.maxActiveTorrents || 0);
       await qb.setPreferences({
