@@ -1,6 +1,7 @@
-import { HealthStatus, ServiceStatus, QBittorrentStatus, RadarrStatus, SonarrStatus } from '../types';
+import { HealthStatus, ServiceStatus, QBittorrentStatus, RadarrStatus, SonarrStatus, LidarrStatus } from '../types';
 import { RadarrClient } from '../services/radarr-client';
 import { SonarrClient } from '../services/sonarr-client';
+import { LidarrClient } from '../services/lidarr-client';
 import { PlexClient } from '../services/plex-client';
 import { QBittorrentClient } from '../services/qbittorrent-client';
 import defaultConfig, { type Config } from '../config';
@@ -11,6 +12,7 @@ export class HealthMonitor {
   private sonarrClient?: SonarrClient;
   private plexClient?: PlexClient;
   private qbittorrentClient?: QBittorrentClient;
+  private lidarrClient?: LidarrClient;
 
   constructor(configOverride?: Config) {
     this.config = configOverride ?? defaultConfig;
@@ -27,6 +29,14 @@ export class HealthMonitor {
       this.sonarrClient = new SonarrClient(
         this.config.services.sonarr.url,
         this.config.services.sonarr.apiKey,
+        this.config.monitoring.verbose
+      );
+    }
+    
+    if (this.config.services.lidarr) {
+      this.lidarrClient = new LidarrClient(
+        this.config.services.lidarr.url,
+        this.config.services.lidarr.apiKey,
         this.config.monitoring.verbose
       );
     }
@@ -69,6 +79,16 @@ export class HealthMonitor {
         })
       );
     }
+    
+    if (this.lidarrClient) {
+      checks.push(
+        this.lidarrClient.checkHealth().then(async status => {
+          const s: LidarrStatus = { ...status };
+          try { s.queueStats = await this.lidarrClient!.getQueueSummary(); } catch {}
+          return ['lidarr', s] as [string, LidarrStatus];
+        })
+      );
+    }
 
     if (this.plexClient) {
       checks.push(
@@ -96,6 +116,7 @@ export class HealthMonitor {
         if (this.radarrClient) serviceNames.push('radarr');
         if (this.sonarrClient) serviceNames.push('sonarr');
         if (this.plexClient) serviceNames.push('plex');
+        if (this.lidarrClient) serviceNames.push('lidarr');
         if (this.qbittorrentClient) serviceNames.push('qbittorrent');
         const service = serviceNames[index];
         if (service) {

@@ -18,7 +18,7 @@ export interface DownloadItem {
   status: string;
   protocol: string;
   downloadClient: string;
-  service: 'radarr' | 'sonarr';
+  service: 'radarr' | 'sonarr' | 'lidarr';
   added?: string;
   errorMessage?: string;
 }
@@ -32,6 +32,10 @@ export interface TVDownloadItem extends DownloadItem {
 
 export interface MovieDownloadItem extends DownloadItem {
   service: 'radarr';
+}
+
+export interface MusicDownloadItem extends DownloadItem {
+  service: 'lidarr';
 }
 
 export interface QBittorrentStatus extends ServiceStatus {
@@ -57,10 +61,15 @@ export interface SonarrStatus extends ServiceStatus {
   queueStats?: QueueStats;
 }
 
+export interface LidarrStatus extends ServiceStatus {
+  queueStats?: QueueStats;
+}
+
 export interface HealthStatus {
   plex?: ServiceStatus;
   radarr?: RadarrStatus;
   sonarr?: SonarrStatus;
+  lidarr?: LidarrStatus;
   qbittorrent?: QBittorrentStatus;
   lastUpdated: Date;
 }
@@ -117,6 +126,7 @@ export interface SeriesInfo {
 }
 
 export type AnyDownloadItem = MovieDownloadItem | TVDownloadItem;
+// For now, AnyDownloadItem excluding Lidarr unless used in UI.
 
 export interface BlockedItemDetails {
   id: number;

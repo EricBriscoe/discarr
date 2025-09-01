@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState, runRecheckErroredNow, openOrphanedMonitorStream, runAutoQueueManagerNow } from '../api';
+import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState, runRecheckErroredNow, openOrphanedMonitorStream, runAutoQueueManagerNow, openAutoQueueStream } from '../api';
 
 export default function Features() {
   const [state, setState] = useState<FeaturesState | null>(null);
@@ -32,6 +32,9 @@ export default function Features() {
   const [omStreaming, setOmStreaming] = useState(false);
   const [omLog, setOmLog] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
+  const [aqStreaming, setAqStreaming] = useState(false);
+  const aqEsRef = useRef<EventSource | null>(null);
+  const [aqLog, setAqLog] = useState<string[]>([]);
   function fmtBytes(n?: number): string {
     if (!n || n <= 0) return '0 B';
     const u = ['B','KB','MB','GB','TB'];
@@ -110,6 +113,36 @@ export default function Features() {
     esRef.current = es;
     return () => { es.close(); esRef.current = null; };
   }, [omStreaming]);
+
+  useEffect(() => {
+    if (!aqStreaming) {
+      if (aqEsRef.current) { aqEsRef.current.close(); aqEsRef.current = null; }
+      return;
+    }
+    if (aqEsRef.current) return;
+    setAqLog([]);
+    const es = openAutoQueueStream((ev: MessageEvent) => {
+      try {
+        const payload = JSON.parse((ev as MessageEvent).data || '{}');
+        const { type, data, ts } = payload || {};
+        const tsStr = ts ? new Date(ts).toLocaleTimeString() : new Date().toLocaleTimeString();
+        let line = `[${tsStr}] ${type}`;
+        if (type === 'start') line += ` quota=${Math.round((data?.maxStorageBytes||0)/(1024*1024*1024))}GB maxActive=${data?.maxActiveTorrents}`;
+        else if (type === 'qbit-connected') line += ` connected`;
+        else if (type === 'torrents-fetched') line += ` total=${data?.total}`;
+        else if (type === 'usage') line += ` used=${Math.round((data?.usedBytes||0)/(1024*1024*1024))}GB available=${Math.round((data?.available||0)/(1024*1024*1024))}GB`;
+        else if (type === 'computed') line += ` queued=${data?.queuedCount} canStart=${data?.canStart}`;
+        else if (type === 'prefs-set') line += ` downloads=${data?.setDownloads} uploads=${data?.setUploads} total=${data?.setTorrents}`;
+        else if (type === 'summary') line += ` downloads=${data?.setDownloads} uploads=${data?.setUploads} total=${data?.setTorrents}`;
+        else if (type === 'error') line += ` ERROR: ${data?.message}`;
+        else line += ` ${JSON.stringify(data)}`;
+        setAqLog(prev => { const next = [...prev, line]; if (next.length>500) next.shift(); return next; });
+        if (type === 'summary') setTimeout(()=> setAqStreaming(false), 1200);
+      } catch {}
+    });
+    aqEsRef.current = es;
+    return () => { es.close(); aqEsRef.current = null; };
+  }, [aqStreaming]);
 
   async function saveAll() {
     try {
@@ -351,7 +384,7 @@ export default function Features() {
           </div>
         </div>
         <div className="row" style={{marginTop:'.5rem'}}>
-          <button className="primary" onClick={async ()=>{ setRunning(true); try { const r = await runAutoQueueManagerNow(); await load(); window.alert(`Set downloads=${r.setDownloads}, uploads=${r.setUploads}, total=${r.setTorrents}`); } catch (e:any) { window.alert(e.message||'Failed'); } finally { setRunning(false); } }} disabled={running || loading}>Run Now</button>
+          <button className="primary" onClick={async ()=>{ setRunning(true); setAqStreaming(true); try { await runAutoQueueManagerNow(); } catch (e:any) { window.alert(e.message||'Failed'); } finally { setRunning(false); } }} disabled={running || loading}>Run Now</button>
           {state?.autoQueueManager?.lastRunAt && <span className="pill ok">Last run: {new Date(state.autoQueueManager.lastRunAt).toLocaleString()}</span>}
           {state?.autoQueueManager?.lastRunResult && (
             state.autoQueueManager.lastRunResult.error
@@ -359,6 +392,11 @@ export default function Features() {
               : <span className="pill ok">Can start: {state.autoQueueManager.lastRunResult.canStart} (used {Math.round((state.autoQueueManager.lastRunResult.usedBytes||0)/(1024*1024*1024))} GB)</span>
           )}
         </div>
+        {(aqStreaming || aqLog.length>0) && (
+          <div className="card" style={{marginTop:'.5rem', maxHeight: 220, overflow:'auto', background:'var(--bg)', fontFamily:'monospace', fontSize:'0.85em'}}>
+            {aqLog.length === 0 ? <div style={{color:'var(--muted)'}}>Waiting for events…</div> : aqLog.map((l,i)=> <div key={i}>{l}</div>)}
+          </div>
+        )}
       </section>
 
       <div className="row" style={{marginTop:'1rem', justifyContent:'flex-end'}}>

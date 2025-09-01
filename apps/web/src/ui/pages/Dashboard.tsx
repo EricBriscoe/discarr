@@ -22,6 +22,7 @@ export default function Dashboard() {
     plex: { label: 'Plex', icon: '🎞️' },
     radarr: { label: 'Radarr', icon: '🎬' },
     sonarr: { label: 'Sonarr', icon: '📺' },
+    lidarr: { label: 'Lidarr', icon: '🎵' },
     qbittorrent: { label: 'qBittorrent', icon: '⚡' }
   };
 
@@ -62,7 +63,7 @@ export default function Dashboard() {
                     <div style={{marginTop:'.4rem',color:'var(--muted)'}}>Total: {fmt(s.torrentStats.totalTorrents)}</div>
                   </div>
                 )}
-                {(k === 'sonarr' || k === 'radarr') && s?.queueStats && (
+                {(k === 'sonarr' || k === 'radarr' || k === 'lidarr') && s?.queueStats && (
                   <div style={{marginTop:'.5rem'}}>
                     <div className="grid" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
                       <div>Downloading: <b>{fmt(s.queueStats.downloading)}</b></div>

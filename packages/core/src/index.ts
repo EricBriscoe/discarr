@@ -7,4 +7,5 @@ export * from './services/base-client';
 export * from './services/plex-client';
 export * from './services/radarr-client';
 export * from './services/sonarr-client';
+export * from './services/lidarr-client';
 export * from './services/qbittorrent-client';

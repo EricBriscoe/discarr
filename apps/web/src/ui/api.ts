@@ -12,7 +12,7 @@ export async function getDownloads() {
   return res.json();
 }
 
-export interface BlockedResponse { radarr: Array<{id:number; title:string}>; sonarr: Array<{id:number; title:string}> }
+export interface BlockedResponse { radarr: Array<{id:number; title:string}>; sonarr: Array<{id:number; title:string}>; lidarr: Array<{id:number; title:string}> }
 
 export async function getBlocked(): Promise<BlockedResponse> {
   const res = await fetch(`${BASE}/api/blocked`);
@@ -26,7 +26,7 @@ export async function approveBlocked(service: 'radarr'|'sonarr', id: number) {
   return res.json();
 }
 
-export async function rejectBlocked(service: 'radarr'|'sonarr', id: number) {
+export async function rejectBlocked(service: 'radarr'|'sonarr'|'lidarr', id: number) {
   const res = await fetch(`${BASE}/api/blocked/${service}/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to reject');
   return res.json();
@@ -151,4 +151,11 @@ export async function runAutoQueueManagerNow() {
   const res = await fetch(`${BASE}/api/features/auto-queue/run`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to run auto queue manager');
   return res.json();
+}
+
+// SSE: Auto Queue Manager progress
+export function openAutoQueueStream(onMessage: (ev: MessageEvent) => void): EventSource {
+  const es = new EventSource(`${BASE}/api/features/auto-queue/stream`);
+  es.addEventListener('aqm', onMessage);
+  return es;
 }

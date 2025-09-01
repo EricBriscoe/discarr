@@ -7,6 +7,7 @@ type DiscordSettings = { enabled?: boolean; token?: string; clientId?: string; c
 type ServicesSettings = {
   radarr?: { url?: string; apiKey?: string };
   sonarr?: { url?: string; apiKey?: string };
+  lidarr?: { url?: string; apiKey?: string };
   plex?: { url?: string };
   qbittorrent?: { url?: string; username?: string; password?: string };
 };
@@ -89,6 +90,7 @@ export class ConfigRepo {
     const services = {
       radarr: envCfg.services.radarr ? { ...envCfg.services.radarr } : undefined,
       sonarr: envCfg.services.sonarr ? { ...envCfg.services.sonarr } : undefined,
+      lidarr: envCfg.services.lidarr ? { ...envCfg.services.lidarr } : undefined,
       plex: envCfg.services.plex ? { ...envCfg.services.plex } : undefined,
       qbittorrent: envCfg.services.qbittorrent ? { ...envCfg.services.qbittorrent } : undefined,
     } as Config['services'];
@@ -96,6 +98,7 @@ export class ConfigRepo {
     if (s.radarr) services.radarr = { ...(services.radarr || {} as any), ...s.radarr } as any;
     if (s.sonarr) services.sonarr = { ...(services.sonarr || {} as any), ...s.sonarr } as any;
     if (s.plex) services.plex = { ...(services.plex || {} as any), ...s.plex } as any;
+    if (s.lidarr) services.lidarr = { ...(services.lidarr || {} as any), ...s.lidarr } as any;
     if (s.qbittorrent) services.qbittorrent = { ...(services.qbittorrent || {} as any), ...s.qbittorrent } as any;
 
     return {
@@ -128,6 +131,7 @@ export class ConfigRepo {
       services: {
         radarr: { url: s.services?.radarr?.url || '', apiKeySet: !!s.services?.radarr?.apiKey },
         sonarr: { url: s.services?.sonarr?.url || '', apiKeySet: !!s.services?.sonarr?.apiKey },
+        lidarr: { url: s.services?.lidarr?.url || '', apiKeySet: !!s.services?.lidarr?.apiKey },
         plex: { url: s.services?.plex?.url || '' },
         qbittorrent: { url: s.services?.qbittorrent?.url || '', username: s.services?.qbittorrent?.username || '', passwordSet: !!s.services?.qbittorrent?.password }
       },
@@ -162,7 +166,7 @@ export class ConfigRepo {
       settings.services.qbittorrent = { ...(settings.services.qbittorrent || {}), ...(payload.services.qbittorrent || {}) };
       // Trim strings
       const strTrim = (v: any) => typeof v === 'string' ? v.trim() : v;
-      for (const svc of ['radarr','sonarr','plex','qbittorrent'] as const) {
+      for (const svc of ['radarr','sonarr','lidarr','plex','qbittorrent'] as const) {
         const obj: any = (settings.services as any)[svc];
         if (obj) Object.keys(obj).forEach(k => obj[k] = strTrim(obj[k]));
       }
