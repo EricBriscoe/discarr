@@ -128,6 +128,13 @@ export async function runStalledCleanupNow() {
   return res.json();
 }
 
+// SSE: Stalled cleanup progress
+export function openStalledCleanupStream(onMessage: (ev: MessageEvent) => void): EventSource {
+  const es = new EventSource(`${BASE}/api/features/stalled-cleanup/stream`);
+  es.addEventListener('sc', onMessage);
+  return es;
+}
+
 export async function runOrphanedMonitorNow() {
   const res = await fetch(`${BASE}/api/features/orphaned-monitor/run`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to run orphaned monitor');

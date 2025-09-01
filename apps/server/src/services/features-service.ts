@@ -3,6 +3,7 @@ import { LidarrClient } from '@discarr/core';
 import { ConfigRepo } from './config-repo';
 import { orphanEvents } from './orphaned-monitor-events';
 import { aqmEvents } from './aqm-events';
+import { cleanupEvents } from './stalled-cleanup-events';
 import SftpClient from 'ssh2-sftp-client';
 import path from 'path';
 
@@ -109,6 +110,8 @@ export class FeaturesService {
     const f = this.configRepo.getFeatures();
     const minAgeMinutes = f.stalledDownloadCleanup.minAgeMinutes ?? 60;
     const thresholdSec = Math.max(1, minAgeMinutes) * 60;
+    const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+    cleanupEvents.send({ type: 'start', runId, data: { minAgeMinutes, ignoreMinAge: !!p?.ignoreMinAge } });
 
     if (!cfg.services.qbittorrent) {
       const result: CleanupResult = { attempted: 0, removed: 0, error: 'qBittorrent not configured' };
@@ -117,7 +120,9 @@ export class FeaturesService {
     }
     try {
       const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
+      cleanupEvents.send({ type: 'qbit-connected', runId });
       const torrents = await qb.getTorrents();
+      cleanupEvents.send({ type: 'qbit-fetched', runId, data: { total: torrents.length } });
       const nowSec = Math.floor(Date.now() / 1000);
       const stale = torrents.filter(t => {
         const isStalledDl = t.state === 'stalledDL';
@@ -130,6 +135,7 @@ export class FeaturesService {
         return (isStalledDl || isMetaDl) && ageOk;
       });
       const hashes = stale.map(t => t.hash);
+      cleanupEvents.send({ type: 'stale-found', runId, data: { count: hashes.length } });
       const staleSet = new Set(hashes.map(h=>h.toLowerCase()));
       // Cross-reference with *arr queues and blacklist matching releases
       try {
@@ -138,29 +144,31 @@ export class FeaturesService {
           const rc = new RadarrClient(cfgEff.services.radarr.url, cfgEff.services.radarr.apiKey, cfgEff.monitoring.verbose);
           const items = await (rc as any).getQueueItems();
           const ids = items.filter((it:any)=> typeof it.downloadId === 'string' && staleSet.has(it.downloadId.toLowerCase())).map((it:any)=> it.id);
-          if (ids.length>0) await (rc as any).removeQueueItemsWithBlocklist(ids, true);
+          if (ids.length>0) { await (rc as any).removeQueueItemsWithBlocklist(ids, true); cleanupEvents.send({ type: 'radarr-blacklisted', runId, data: { count: ids.length } }); }
         }
         if (cfgEff.services.sonarr) {
           const sc = new SonarrClient(cfgEff.services.sonarr.url, cfgEff.services.sonarr.apiKey, cfgEff.monitoring.verbose);
           const items = await (sc as any).getQueueItems();
           const ids = items.filter((it:any)=> typeof it.downloadId === 'string' && staleSet.has(it.downloadId.toLowerCase())).map((it:any)=> it.id);
-          if (ids.length>0) await (sc as any).removeQueueItemsWithBlocklist(ids, true);
+          if (ids.length>0) { await (sc as any).removeQueueItemsWithBlocklist(ids, true); cleanupEvents.send({ type: 'sonarr-blacklisted', runId, data: { count: ids.length } }); }
         }
         const anyCfg: any = cfgEff as any;
         if (anyCfg.services?.lidarr) {
           const lc = new (LidarrClient as any)(anyCfg.services.lidarr.url, anyCfg.services.lidarr.apiKey, cfgEff.monitoring.verbose);
           const items = await lc.getQueueItems();
           const ids = items.filter((it:any)=> typeof it.downloadId === 'string' && staleSet.has(it.downloadId.toLowerCase())).map((it:any)=> it.id);
-          if (ids.length>0) await lc.removeQueueItems(ids, true);
+          if (ids.length>0) { await lc.removeQueueItems(ids, true); cleanupEvents.send({ type: 'lidarr-blacklisted', runId, data: { count: ids.length } }); }
         }
-      } catch {}
+      } catch (e:any) { cleanupEvents.send({ type: 'error', runId, data: { message: e?.message || 'Cross-reference failed' } }); }
       let removed = 0;
       if (hashes.length > 0) {
         const result = await qb.deleteTorrents(hashes, true);
         removed = result.filter(r => r.success).length;
+        cleanupEvents.send({ type: 'deleted', runId, data: { attempted: hashes.length, removed } });
       }
       const out: CleanupResult = { attempted: hashes.length, removed };
       this.recordCleanup(out);
+      cleanupEvents.send({ type: 'summary', runId, data: out });
       // persist cumulative counter
       try {
         const f = this.configRepo.getFeatures();
@@ -171,6 +179,7 @@ export class FeaturesService {
     } catch (e: any) {
       const out: CleanupResult = { attempted: 0, removed: 0, error: e?.message || 'Unknown error' };
       this.recordCleanup(out);
+      cleanupEvents.send({ type: 'error', runId, data: { message: e?.message || 'Unknown error' } });
       return out;
     }
   }

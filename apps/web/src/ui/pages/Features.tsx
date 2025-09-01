@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState, runRecheckErroredNow, openOrphanedMonitorStream, runAutoQueueManagerNow, openAutoQueueStream } from '../api';
+import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState, runRecheckErroredNow, openOrphanedMonitorStream, runAutoQueueManagerNow, openAutoQueueStream, openStalledCleanupStream } from '../api';
 
 export default function Features() {
   const [state, setState] = useState<FeaturesState | null>(null);
@@ -32,6 +32,9 @@ export default function Features() {
   const [omStreaming, setOmStreaming] = useState(false);
   const [omLog, setOmLog] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
+  const [scStreaming, setScStreaming] = useState(false);
+  const scEsRef = useRef<EventSource | null>(null);
+  const [scLog, setScLog] = useState<string[]>([]);
   const [aqStreaming, setAqStreaming] = useState(false);
   const aqEsRef = useRef<EventSource | null>(null);
   const [aqLog, setAqLog] = useState<string[]>([]);
@@ -115,6 +118,38 @@ export default function Features() {
   }, [omStreaming]);
 
   useEffect(() => {
+    if (!scStreaming) {
+      if (scEsRef.current) { scEsRef.current.close(); scEsRef.current = null; }
+      return;
+    }
+    if (scEsRef.current) return;
+    setScLog([]);
+    const es = openStalledCleanupStream((ev: MessageEvent) => {
+      try {
+        const payload = JSON.parse((ev as MessageEvent).data || '{}');
+        const { type, data, ts } = payload || {};
+        const tsStr = ts ? new Date(ts).toLocaleTimeString() : new Date().toLocaleTimeString();
+        let line = `[${tsStr}] ${type}`;
+        if (type === 'start') line += ` minAge=${data?.minAgeMinutes} ignore=${data?.ignoreMinAge}`;
+        else if (type === 'qbit-connected') line += ` connected`;
+        else if (type === 'qbit-fetched') line += ` total=${data?.total}`;
+        else if (type === 'stale-found') line += ` count=${data?.count}`;
+        else if (type === 'radarr-blacklisted') line += ` ${data?.count}`;
+        else if (type === 'sonarr-blacklisted') line += ` ${data?.count}`;
+        else if (type === 'lidarr-blacklisted') line += ` ${data?.count}`;
+        else if (type === 'deleted') line += ` removed=${data?.removed}/${data?.attempted}`;
+        else if (type === 'summary') line += ` removed=${data?.removed}/${data?.attempted}`;
+        else if (type === 'error') line += ` ERROR: ${data?.message}`;
+        else line += ` ${JSON.stringify(data)}`;
+        setScLog(prev => { const next = [...prev, line]; if (next.length>500) next.shift(); return next; });
+        if (type === 'summary') setTimeout(()=> setScStreaming(false), 1200);
+      } catch {}
+    });
+    scEsRef.current = es;
+    return () => { es.close(); scEsRef.current = null; };
+  }, [scStreaming]);
+
+  useEffect(() => {
     if (!aqStreaming) {
       if (aqEsRef.current) { aqEsRef.current.close(); aqEsRef.current = null; }
       return;
@@ -181,7 +216,7 @@ export default function Features() {
   }
 
   async function runNow() {
-    setRunning(true); setError(null);
+    setRunning(true); setError(null); setScStreaming(true);
     try { await runStalledCleanupNow(); await load(); }
     catch (e:any) { setError(e.message || 'Failed to run'); }
     finally { setRunning(false); }
@@ -241,6 +276,11 @@ export default function Features() {
           )}
           {typeof s?.totalRemoved === 'number' && <span className="pill ok">Total cleaned up: {s.totalRemoved}</span>}
         </div>
+        {(scStreaming || scLog.length>0) && (
+          <div className="card" style={{marginTop:'.5rem', maxHeight: 220, overflow:'auto', background:'var(--bg)', fontFamily:'monospace', fontSize:'0.85em'}}>
+            {scLog.length === 0 ? <div style={{color:'var(--muted)'}}>Waiting for events…</div> : scLog.map((l,i)=> <div key={i}>{l}</div>)}
+          </div>
+        )}
       </section>
 
       <section className="card" style={{marginTop:'1rem'}}>
