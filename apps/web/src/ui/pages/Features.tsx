@@ -263,7 +263,7 @@ export default function Features() {
               <input className="input" type="number" min={1} value={stInterval} onChange={(e:any)=>setStInterval(parseInt(e.target.value||'1'))} />
             </div>
             <div>
-              <label>Minimum Age (minutes)</label>
+              <label>No-activity (minutes)</label>
               <input className="input" type="number" min={1} value={stMinAge} onChange={(e:any)=>setStMinAge(parseInt(e.target.value||'1'))} />
             </div>
           </div>

@@ -162,6 +162,7 @@ export class ConfigRepo {
       settings.services = settings.services || {};
       settings.services.radarr = { ...(settings.services.radarr || {}), ...(payload.services.radarr || {}) };
       settings.services.sonarr = { ...(settings.services.sonarr || {}), ...(payload.services.sonarr || {}) };
+      settings.services.lidarr = { ...(settings.services.lidarr || {}), ...(payload.services as any).lidarr || {} } as any;
       settings.services.plex = { ...(settings.services.plex || {}), ...(payload.services.plex || {}) };
       settings.services.qbittorrent = { ...(settings.services.qbittorrent || {}), ...(payload.services.qbittorrent || {}) };
       // Trim strings
