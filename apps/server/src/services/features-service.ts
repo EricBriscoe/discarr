@@ -1,5 +1,6 @@
 import { QBittorrentClient } from '@discarr/core';
 import { ConfigRepo } from './config-repo';
+import { orphanEvents } from './orphaned-monitor-events';
 import SftpClient from 'ssh2-sftp-client';
 import path from 'path';
 
@@ -15,7 +16,7 @@ export class FeaturesService {
   private lastCleanupRunAt?: string; // ISO
   private lastCleanupResult?: CleanupResult;
   private lastOrphanRunAt?: string;
-  private lastOrphanResult?: { scanned: number; orphaned: number; deleted: number; errors?: string[] };
+  private lastOrphanResult?: { scanned: number; orphaned: number; deleted: number; expected?: number; torrents?: number; qbFiles?: number; dirCounts?: Array<{ dir: string; files: number; sizeBytes?: number }>; errors?: string[] };
   private lastRecheckRunAt?: string;
   private lastRecheckResult?: { attempted: number; rechecked: number; error?: string };
 
@@ -164,6 +165,7 @@ export class FeaturesService {
         },
         directories: f.orphanedMonitor.directories,
         deleteEmptyDirs: f.orphanedMonitor.deleteEmptyDirs,
+        ignored: (f.orphanedMonitor as any).ignored,
         totalDeleted: f.orphanedMonitor.totalDeleted,
         lastRunAt: this.lastOrphanRunAt,
         lastRunResult: this.lastOrphanResult,
@@ -198,23 +200,39 @@ export class FeaturesService {
     }
   }
 
-  async runOrphanedMonitor(): Promise<{ scanned: number; orphaned: number; deleted: number; errors?: string[] }> {
+  async runOrphanedMonitor(): Promise<{ scanned: number; orphaned: number; deleted: number; expected?: number; torrents?: number; qbFiles?: number; dirCounts?: Array<{ dir: string; files: number; sizeBytes?: number }>; errors?: string[] }> {
     const cfg = this.configRepo.getEffectiveConfig();
     const f = this.configRepo.getFeatures();
     const settings = f.orphanedMonitor;
     const conn = (settings as any).connection || {};
+    const ignoredNames: string[] = Array.isArray((settings as any).ignored) && (settings as any).ignored.length > 0
+      ? ((settings as any).ignored as string[]).map(s => (s || '').trim()).filter(s => s.length > 0)
+      : ['.stfolder'];
+    const ignoredSet = new Set<string>(ignoredNames);
     const errors: string[] = [];
+    const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+    orphanEvents.send({ type: 'start', runId, data: { host: conn.host, port: conn.port, username: conn.username, dirs: (settings.directories||[]).slice(0,50) } });
     if (!cfg.services.qbittorrent) {
+      console.warn('[OrphanedMonitor] qBittorrent not configured; cannot build expected file set');
+      orphanEvents.send({ type: 'error', runId, data: { message: 'qBittorrent not configured' } });
       const out = { scanned: 0, orphaned: 0, deleted: 0, errors: ['qBittorrent not configured'] };
       this.recordOrphan(out);
       return out;
     }
     if (!conn.host || !conn.username || !conn.password) {
+      const missing: string[] = [];
+      if (!conn.host) missing.push('host');
+      if (!conn.username) missing.push('username');
+      if (!conn.password) missing.push('password');
+      console.warn(`[OrphanedMonitor] SSH connection not fully configured; missing: ${missing.join(', ')}`);
+      orphanEvents.send({ type: 'error', runId, data: { message: 'SSH connection not fully configured', missing } });
       const out = { scanned: 0, orphaned: 0, deleted: 0, errors: ['SSH connection not fully configured'] };
       this.recordOrphan(out);
       return out;
     }
     if (!settings.directories || settings.directories.length === 0) {
+      console.warn('[OrphanedMonitor] No directories configured to scan');
+      orphanEvents.send({ type: 'error', runId, data: { message: 'No directories configured' } });
       const out = { scanned: 0, orphaned: 0, deleted: 0, errors: ['No directories configured'] };
       this.recordOrphan(out);
       return out;
@@ -223,7 +241,9 @@ export class FeaturesService {
     try {
       const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
       const torrents = await qb.getTorrents();
+      console.log(`[OrphanedMonitor] qBittorrent: fetched ${torrents.length} torrents`);
       const expected = new Set<string>();
+      let qbFilesTotal = 0;
       // Build expected absolute file paths using save_path/content_path and files list.
       // Fetch file lists concurrently for efficiency.
       const fileLists = await Promise.allSettled(
@@ -235,6 +255,7 @@ export class FeaturesService {
       for (const res of fileLists) {
         if (res.status !== 'fulfilled') continue;
         const { t, files } = res.value as { t: any; files: any[] };
+        qbFilesTotal += (files as any[]).length;
         const base = (t.save_path && t.save_path.trim().length>0) ? t.save_path as string : (t.content_path ? path.dirname(t.content_path as string) : '');
         if (!base) continue;
         const normBase = base.replaceAll('\\','/');
@@ -254,8 +275,11 @@ export class FeaturesService {
           expected.add(`${cp}.!qb`);
         }
       }
+      console.log(`[OrphanedMonitor] qBittorrent files total: ${qbFilesTotal}; expected unique paths (incl. in-progress markers): ${expected.size}`);
+      orphanEvents.send({ type: 'qbit-fetched', runId, data: { torrents: torrents.length, qbFiles: qbFilesTotal, expected: expected.size } });
 
       const sftp = new SftpClient();
+      console.log(`[OrphanedMonitor] Connecting via SFTP to ${conn.host}:${conn.port || 22} as ${conn.username}`);
       await sftp.connect({
         host: conn.host,
         port: conn.port || 22,
@@ -263,10 +287,13 @@ export class FeaturesService {
         password: conn.password,
         readyTimeout: 20000,
       });
+      console.log('[OrphanedMonitor] SFTP connection established');
+      orphanEvents.send({ type: 'sftp-connected', runId });
 
       let scanned = 0;
       let orphaned = 0;
       let deleted = 0;
+      const dirCounts: Array<{ dir: string; files: number; sizeBytes?: number }> = [];
 
       // Normalize directories in case any were saved with literal "\n"
       const rawDirs = settings.directories || [];
@@ -275,18 +302,25 @@ export class FeaturesService {
         .map(d => d.trim())
         .filter(d => d.length > 0);
       console.log(`[OrphanedMonitor] Starting scan of ${dirs.length} directories on ${conn.host}:${conn.port} as ${conn.username}`);
+      for (const d of dirs) console.log(`[OrphanedMonitor] Directory to scan: ${d}`);
+      orphanEvents.send({ type: 'scan-start', runId, data: { dirs } });
 
-      const listRecursive = async (dir: string): Promise<Array<{path:string; type:'file'|'dir'}>> => {
-        const out: Array<{path:string; type:'file'|'dir'}> = [];
+      const listRecursive = async (dir: string): Promise<Array<{path:string; type:'file'|'dir'; size?: number}>> => {
+        const out: Array<{path:string; type:'file'|'dir'; size?: number}> = [];
         const items = await sftp.list(dir);
         for (const it of items) {
           const p = path.posix.join(dir, it.name);
+          const base = path.posix.basename(p);
+          // Skip ignored entries by base name
+          if (ignoredSet.has(base)) {
+            continue;
+          }
           if (it.type === 'd') {
             out.push({ path: p, type: 'dir' });
             const sub = await listRecursive(p);
             out.push(...sub);
           } else if (it.type === '-') {
-            out.push({ path: p, type: 'file' });
+            out.push({ path: p, type: 'file', size: (it as any).size ?? 0 });
           }
         }
         return out;
@@ -297,6 +331,7 @@ export class FeaturesService {
         try {
           const items = await listRecursive(dir);
           const filesInDir: string[] = [];
+          let dirSize = 0;
           for (const it of items) {
             if (it.type === 'file') {
               scanned++;
@@ -306,7 +341,9 @@ export class FeaturesService {
               const base = path.posix.basename(norm);
               const lower = base.toLowerCase();
               const isQbInProgress = lower.endsWith('.!qb');
-              if (isQbInProgress) continue;
+              if (isQbInProgress) { dirSize += it.size || 0; continue; }
+              // Never delete ignored files
+              if (ignoredSet.has(base)) { dirSize += it.size || 0; continue; }
               if (!expected.has(norm)) {
                 orphaned++;
                 try {
@@ -314,11 +351,16 @@ export class FeaturesService {
                   await sftp.delete(norm);
                   deleted++;
                   console.log(`[OrphanedMonitor] Deleted: ${norm}`);
+                  orphanEvents.send({ type: 'deleted', runId, data: { path: norm } });
                 } catch (e:any) {
                   const msg = `Delete failed: ${norm}: ${e?.message||e}`;
                   console.warn(`[OrphanedMonitor] ${msg}`);
                   errors.push(msg);
+                  orphanEvents.send({ type: 'error', runId, data: { message: msg } });
+                  dirSize += it.size || 0;
                 }
+              } else {
+                dirSize += it.size || 0;
               }
             }
           }
@@ -334,11 +376,16 @@ export class FeaturesService {
               console.log(`[OrphanedMonitor] No files found in ${dir}`);
             }
           } catch {}
+          dirCounts.push({ dir, files: filesInDir.length, sizeBytes: dirSize });
+          orphanEvents.send({ type: 'dir-summary', runId, data: { dir, files: filesInDir.length, sizeBytes: dirSize, scanned, orphaned, deleted } });
           if (settings.deleteEmptyDirs) {
             // remove empty directories bottom-up
             const dirs = items.filter(i=>i.type==='dir').map(i=>i.path).sort((a,b)=>b.length-a.length);
             for (const d of dirs) {
               try {
+                // Skip removal of ignored directories
+                const b = path.posix.basename(d);
+                if (ignoredSet.has(b)) continue;
                 const ls = await sftp.list(d);
                 if (ls.length === 0) await sftp.rmdir(d);
               } catch {}
@@ -346,21 +393,25 @@ export class FeaturesService {
           }
         } catch (e:any) {
           errors.push(`Scan failed: ${dir}: ${e?.message||e}`);
+          orphanEvents.send({ type: 'error', runId, data: { message: `Scan failed: ${dir}: ${e?.message||e}` } });
         }
       }
 
       await sftp.end();
-      const out = { scanned, orphaned, deleted, ...(errors.length ? { errors } : {}) };
-      console.log(`[OrphanedMonitor] Summary: scanned=${scanned}, orphaned=${orphaned}, deleted=${deleted}${errors.length ? `, errors=${errors.length}` : ''}`);
+      const out = { scanned, orphaned, deleted, expected: expected.size, torrents: torrents.length, qbFiles: qbFilesTotal, dirCounts, ...(errors.length ? { errors } : {}) };
+      console.log(`[OrphanedMonitor] Summary: scanned=${scanned}, expected=${expected.size}, orphaned=${orphaned}, deleted=${deleted}, torrents=${torrents.length}, qbFiles=${qbFilesTotal}${errors.length ? `, errors=${errors.length}` : ''}`);
       this.recordOrphan(out);
+      orphanEvents.send({ type: 'summary', runId, data: out });
       try {
         const current = this.configRepo.getFeatures().orphanedMonitor.totalDeleted || 0;
         this.configRepo.updateFeatures({ orphanedMonitor: { totalDeleted: current + deleted } });
       } catch {}
       return out;
     } catch (e:any) {
+      console.warn('[OrphanedMonitor] Fatal error during run:', e?.message || e);
       const out = { scanned: 0, orphaned: 0, deleted: 0, errors: [e?.message || 'Unknown error'] };
       this.recordOrphan(out);
+      orphanEvents.send({ type: 'error', runId, data: { message: e?.message || 'Unknown error' } });
       return out;
     }
   }

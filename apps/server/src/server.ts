@@ -8,6 +8,7 @@ import { HealthMonitor, DownloadMonitor, RadarrClient, SonarrClient, QBittorrent
 import { ConfigRepo } from './services/config-repo';
 import { BotController } from './services/bot-controller';
 import { FeaturesService } from './services/features-service';
+import { orphanEvents } from './services/orphaned-monitor-events';
 // SSO-protected deployment: no in-app auth middleware
 
 // __dirname is available in CommonJS output; keep it simple
@@ -179,6 +180,19 @@ app.post('/api/features/orphaned-monitor/run', async (_req, res) => {
     const result = await featuresService.runOrphanedMonitor();
     res.json(result);
   } catch (e:any) { res.status(500).json({ error: e.message }); }
+});
+
+// SSE stream for orphaned monitor progress
+app.get('/api/features/orphaned-monitor/stream', async (req, res) => {
+  // headers for SSE
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  res.flushHeaders?.();
+  orphanEvents.addClient(res);
+  req.on('close', () => orphanEvents.removeClient(res));
 });
 
 // qBittorrent: scheduled recheck run-now
