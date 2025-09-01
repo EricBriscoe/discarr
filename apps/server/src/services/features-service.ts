@@ -266,9 +266,12 @@ export class FeaturesService {
       const setUploads = Math.max(0, aq.maxActiveTorrents || 0);
       const setTorrents = Math.max(0, aq.maxActiveTorrents || 0);
       await qb.setPreferences({
-        'queueing_max_active_downloads': setDownloads,
-        'queueing_max_active_uploads': setUploads,
-        'queueing_max_active_torrents': setTorrents,
+        // Ensure queueing is enabled so limits apply
+        'queueing_enabled': true,
+        // Correct keys per qBittorrent Web API
+        'max_active_downloads': setDownloads,
+        'max_active_uploads': setUploads,
+        'max_active_torrents': setTorrents,
       });
       const out = { usedBytes, queuedBytes, queuedCount: queued.length, canStart, setDownloads, setUploads, setTorrents };
       this.lastAqmRunAt = new Date().toISOString();
