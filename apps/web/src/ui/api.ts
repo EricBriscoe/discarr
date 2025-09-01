@@ -95,9 +95,10 @@ export interface FeaturesState {
     connection: { host?: string; port?: number; username?: string; passwordSet?: boolean };
     directories: string[];
     deleteEmptyDirs: boolean;
+    ignored: string[];
     totalDeleted: number;
     lastRunAt?: string;
-    lastRunResult?: { scanned: number; orphaned: number; deleted: number; errors?: string[] };
+    lastRunResult?: { scanned: number; orphaned: number; deleted: number; expected?: number; torrents?: number; qbFiles?: number; dirCounts?: Array<{ dir: string; files: number; sizeBytes?: number }>; errors?: string[] };
   };
 }
 
@@ -123,6 +124,13 @@ export async function runOrphanedMonitorNow() {
   const res = await fetch(`${BASE}/api/features/orphaned-monitor/run`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to run orphaned monitor');
   return res.json();
+}
+
+// SSE: Orphaned monitor progress
+export function openOrphanedMonitorStream(onMessage: (ev: MessageEvent) => void): EventSource {
+  const es = new EventSource(`${BASE}/api/features/orphaned-monitor/stream`);
+  es.addEventListener('om', onMessage);
+  return es;
 }
 
 export async function runRecheckErroredNow() {

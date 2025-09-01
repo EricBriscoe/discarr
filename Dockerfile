@@ -39,7 +39,7 @@ RUN chown -R discarr:nodejs /app
 USER discarr
 
 EXPOSE 8080
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD node -e "try { require('./apps/server/dist/server.js'); process.exit(0); } catch(e) { process.exit(1); }"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD node -e "require('http').get('http://127.0.0.1:8080/api/health', r => process.exit(r.statusCode===200?0:1)).on('error', _=>process.exit(1))"
 
 CMD ["node", "apps/server/dist/server.js"]

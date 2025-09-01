@@ -44,6 +44,9 @@ type FeatureSettings = {
     };
     directories?: string[]; // absolute paths to scan
     deleteEmptyDirs?: boolean; // default false
+    // base names to ignore while scanning (files or directories)
+    // e.g. ['.stfolder'] ensures Syncthing marker is never deleted
+    ignored?: string[];
     totalDeleted?: number; // cumulative files deleted
   }
 };
@@ -191,6 +194,9 @@ export class ConfigRepo {
         },
         directories: Array.isArray(f.orphanedMonitor?.directories) ? f.orphanedMonitor!.directories! : [],
         deleteEmptyDirs: f.orphanedMonitor?.deleteEmptyDirs ?? false,
+        ignored: Array.isArray(f.orphanedMonitor?.ignored) && (f.orphanedMonitor!.ignored as any[]).length > 0
+          ? (f.orphanedMonitor!.ignored as string[])
+          : ['.stfolder'],
         totalDeleted: f.orphanedMonitor?.totalDeleted ?? 0,
       },
     };
@@ -206,14 +212,30 @@ export class ConfigRepo {
       };
     }
     if (payload.orphanedMonitor) {
-      settings.features.orphanedMonitor = {
-        ...(settings.features.orphanedMonitor || {}),
-        ...payload.orphanedMonitor
-      } as any;
+      const current = (settings.features.orphanedMonitor || {}) as any;
+      const incoming = payload.orphanedMonitor as any;
+      const next: any = { ...current, ...incoming };
+      if (incoming.connection) {
+        // Deep-merge connection to avoid wiping password when omitted
+        const curCon = (current.connection || {}) as any;
+        const inCon = (incoming.connection || {}) as any;
+        next.connection = { ...curCon, ...inCon };
+        // Trim strings in connection
+        Object.keys(next.connection).forEach(k => {
+          if (typeof next.connection[k] === 'string') next.connection[k] = (next.connection[k] as string).trim();
+        });
+      }
+      settings.features.orphanedMonitor = next;
       // normalize directories (trim, drop empty)
       const dirs = (settings.features.orphanedMonitor as any).directories;
       if (Array.isArray(dirs)) {
         (settings.features.orphanedMonitor as any).directories = dirs.map((d: string)=> (d||'').trim()).filter((d: string)=>d.length>0);
+      }
+      // normalize ignored entries (trim, drop empty, de-dup)
+      const ig = (settings.features.orphanedMonitor as any).ignored;
+      if (Array.isArray(ig)) {
+        const cleaned = ig.map((s: string)=> (s||'').trim()).filter((s: string)=>s.length>0);
+        (settings.features.orphanedMonitor as any).ignored = Array.from(new Set(cleaned));
       }
     }
     if (payload.qbittorrentRecheckErrored) {
