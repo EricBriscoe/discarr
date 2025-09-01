@@ -26,6 +26,27 @@ export class RadarrClient extends BaseClient {
     }
   }
 
+  async getQueueItems(): Promise<any[]> {
+    return this.getAllPaginated<any>('/api/v3/queue', { includeUnknownMovieItems: false, includeMovie: true });
+  }
+
+  async removeQueueItemsWithBlocklist(itemIds: number[], blocklist: boolean): Promise<{id:number; success:boolean; error?:string}[]> {
+    const results = await Promise.allSettled(
+      itemIds.map(async (id) => {
+        try {
+          await this.makeRequest(`/api/v3/queue/${id}`, 'DELETE', undefined, {
+            removeFromClient: true,
+            blocklist
+          });
+          return { id, success: true };
+        } catch (error:any) {
+          return { id, success: false, error: error?.message || 'Unknown error' };
+        }
+      })
+    );
+    return results.map(r=> r.status==='fulfilled'? r.value : { id:0, success:false, error:'Promise rejected' });
+  }
+
   async getQueueSummary(): Promise<import('../types').QueueStats> {
     try {
       const items = await this.getAllPaginated<any>('/api/v3/queue', {

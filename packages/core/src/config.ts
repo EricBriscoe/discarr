@@ -17,6 +17,10 @@ export interface Config {
       url: string;
       apiKey: string;
     };
+    lidarr?: {
+      url: string;
+      apiKey: string;
+    };
     plex?: {
       url: string;
     };
@@ -55,6 +59,12 @@ function getConfig(): Config {
         radarr: {
           url: process.env.RADARR_URL,
           apiKey: process.env.RADARR_API_KEY,
+        },
+      }),
+      ...(process.env.LIDARR_URL && process.env.LIDARR_API_KEY && {
+        lidarr: {
+          url: process.env.LIDARR_URL,
+          apiKey: process.env.LIDARR_API_KEY,
         },
       }),
       ...(process.env.SONARR_URL && process.env.SONARR_API_KEY && {

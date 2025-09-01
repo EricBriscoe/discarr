@@ -5,10 +5,12 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { HealthMonitor, DownloadMonitor, RadarrClient, SonarrClient, QBittorrentClient } from '@discarr/core';
+import { LidarrClient } from '@discarr/core';
 import { ConfigRepo } from './services/config-repo';
 import { BotController } from './services/bot-controller';
 import { FeaturesService } from './services/features-service';
 import { orphanEvents } from './services/orphaned-monitor-events';
+import { aqmEvents } from './services/aqm-events';
 // SSO-protected deployment: no in-app auth middleware
 
 // __dirname is available in CommonJS output; keep it simple
@@ -57,9 +59,17 @@ app.get('/api/blocked', async (_req, res) => {
     const cfg = configRepo.getEffectiveConfig();
     const rc = cfg.services.radarr ? new RadarrClient(cfg.services.radarr.url, cfg.services.radarr.apiKey, cfg.monitoring.verbose) : undefined;
     const sc = cfg.services.sonarr ? new SonarrClient(cfg.services.sonarr.url, cfg.services.sonarr.apiKey, cfg.monitoring.verbose) : undefined;
+    const lc = (cfg as any).services?.lidarr ? new LidarrClient((cfg as any).services.lidarr.url, (cfg as any).services.lidarr.apiKey, cfg.monitoring.verbose) : undefined;
     const radarr = rc ? await rc.getImportBlockedItems() : [];
     const sonarr = sc ? await sc.getImportBlockedItems() : [];
-    res.json({ radarr, sonarr });
+    let lidarr: any[] = [];
+    try {
+      if (lc) {
+        const items = await lc.getQueueItems();
+        lidarr = items.filter((it:any)=> (it.trackedDownloadState||it.status) === 'importBlocked').map((it:any)=>({ id: it.id, title: it.title || it.artist?.artistName || 'Unknown Music' }));
+      }
+    } catch {}
+    res.json({ radarr, sonarr, lidarr });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -78,13 +88,15 @@ app.post('/api/blocked/:service/:id/approve', async (req, res) => {
 });
 
 app.delete('/api/blocked/:service/:id', async (req, res) => {
-  const { service, id } = req.params as { service: 'radarr' | 'sonarr'; id: string };
+  const { service, id } = req.params as { service: 'radarr' | 'sonarr' | 'lidarr'; id: string };
   try {
     const cfg = configRepo.getEffectiveConfig();
     if (service === 'radarr' && cfg.services.radarr) {
-      await new RadarrClient(cfg.services.radarr.url, cfg.services.radarr.apiKey, cfg.monitoring.verbose).removeQueueItems([parseInt(id)]);
+      await new RadarrClient(cfg.services.radarr.url, cfg.services.radarr.apiKey, cfg.monitoring.verbose).removeQueueItemsWithBlocklist([parseInt(id)], true);
     } else if (service === 'sonarr' && cfg.services.sonarr) {
-      await new SonarrClient(cfg.services.sonarr.url, cfg.services.sonarr.apiKey, cfg.monitoring.verbose).removeQueueItems([parseInt(id)]);
+      await new SonarrClient(cfg.services.sonarr.url, cfg.services.sonarr.apiKey, cfg.monitoring.verbose).removeQueueItemsWithBlocklist([parseInt(id)], true);
+    } else if (service === 'lidarr' && (cfg as any).services?.lidarr) {
+      await new (LidarrClient as any)((cfg as any).services.lidarr.url, (cfg as any).services.lidarr.apiKey, cfg.monitoring.verbose).removeQueueItems([parseInt(id)], true);
     }
     else return res.status(400).json({ error: 'Service not available' });
     res.json({ ok: true });
@@ -196,6 +208,14 @@ app.get('/api/features/orphaned-monitor/stream', async (req, res) => {
   res.flushHeaders?.();
   orphanEvents.addClient(res);
   req.on('close', () => orphanEvents.removeClient(res));
+});
+
+// SSE stream for auto-queue manager progress
+app.get('/api/features/auto-queue/stream', async (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+  res.flushHeaders?.();
+  aqmEvents.addClient(res);
+  req.on('close', () => aqmEvents.removeClient(res));
 });
 
 // qBittorrent: scheduled recheck run-now

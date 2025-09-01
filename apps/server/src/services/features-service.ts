@@ -1,6 +1,8 @@
-import { QBittorrentClient } from '@discarr/core';
+import { QBittorrentClient, RadarrClient, SonarrClient } from '@discarr/core';
+import { LidarrClient } from '@discarr/core';
 import { ConfigRepo } from './config-repo';
 import { orphanEvents } from './orphaned-monitor-events';
+import { aqmEvents } from './aqm-events';
 import SftpClient from 'ssh2-sftp-client';
 import path from 'path';
 
@@ -128,6 +130,30 @@ export class FeaturesService {
         return (isStalledDl || isMetaDl) && ageOk;
       });
       const hashes = stale.map(t => t.hash);
+      const staleSet = new Set(hashes.map(h=>h.toLowerCase()));
+      // Cross-reference with *arr queues and blacklist matching releases
+      try {
+        const cfgEff = this.configRepo.getEffectiveConfig();
+        if (cfgEff.services.radarr) {
+          const rc = new RadarrClient(cfgEff.services.radarr.url, cfgEff.services.radarr.apiKey, cfgEff.monitoring.verbose);
+          const items = await (rc as any).getQueueItems();
+          const ids = items.filter((it:any)=> typeof it.downloadId === 'string' && staleSet.has(it.downloadId.toLowerCase())).map((it:any)=> it.id);
+          if (ids.length>0) await (rc as any).removeQueueItemsWithBlocklist(ids, true);
+        }
+        if (cfgEff.services.sonarr) {
+          const sc = new SonarrClient(cfgEff.services.sonarr.url, cfgEff.services.sonarr.apiKey, cfgEff.monitoring.verbose);
+          const items = await (sc as any).getQueueItems();
+          const ids = items.filter((it:any)=> typeof it.downloadId === 'string' && staleSet.has(it.downloadId.toLowerCase())).map((it:any)=> it.id);
+          if (ids.length>0) await (sc as any).removeQueueItemsWithBlocklist(ids, true);
+        }
+        const anyCfg: any = cfgEff as any;
+        if (anyCfg.services?.lidarr) {
+          const lc = new (LidarrClient as any)(anyCfg.services.lidarr.url, anyCfg.services.lidarr.apiKey, cfgEff.monitoring.verbose);
+          const items = await lc.getQueueItems();
+          const ids = items.filter((it:any)=> typeof it.downloadId === 'string' && staleSet.has(it.downloadId.toLowerCase())).map((it:any)=> it.id);
+          if (ids.length>0) await lc.removeQueueItems(ids, true);
+        }
+      } catch {}
       let removed = 0;
       if (hashes.length > 0) {
         const result = await qb.deleteTorrents(hashes, true);
@@ -230,20 +256,26 @@ export class FeaturesService {
     const cfg = this.configRepo.getEffectiveConfig();
     const f = this.configRepo.getFeatures();
     const aq = f.autoQueueManager;
+    const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+    aqmEvents.send({ type: 'start', runId, data: { intervalMinutes: aq.intervalMinutes, maxStorageBytes: aq.maxStorageBytes, maxActiveTorrents: aq.maxActiveTorrents } });
     if (!cfg.services.qbittorrent) {
       const out = { usedBytes: 0, queuedBytes: 0, queuedCount: 0, canStart: 0, setDownloads: 0, setUploads: 0, setTorrents: 0, error: 'qBittorrent not configured' };
       this.lastAqmRunAt = new Date().toISOString();
       this.lastAqmResult = out;
+      aqmEvents.send({ type: 'error', runId, data: { message: 'qBittorrent not configured' } });
       return out;
     }
     try {
       const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
+      aqmEvents.send({ type: 'qbit-connected', runId });
       const torrents = await qb.getTorrents();
+      aqmEvents.send({ type: 'torrents-fetched', runId, data: { total: torrents.length } });
       // Completed torrents use space
       const completed = torrents.filter(t => t.progress >= 0.9999 || /UP$/.test(t.state) || /(uploading|stalledUP|queuedUP|forcedUP)/.test(t.state));
       const usedBytes = completed.reduce((sum, t) => sum + (typeof t.size === 'number' ? t.size : 0), 0);
       const quota = Math.max(0, aq.maxStorageBytes || 0);
       const available = Math.max(0, quota - usedBytes);
+      aqmEvents.send({ type: 'usage', runId, data: { completed: completed.length, usedBytes, quota, available } });
       // Queued downloads in order of added time (oldest first)
       const queued = torrents
         .filter(t => t.state === 'queuedDL')
@@ -265,6 +297,7 @@ export class FeaturesService {
       const setDownloads = Math.max(1, canStart);
       const setUploads = Math.max(0, aq.maxActiveTorrents || 0);
       const setTorrents = Math.max(0, aq.maxActiveTorrents || 0);
+      aqmEvents.send({ type: 'computed', runId, data: { queuedCount: queued.length, queuedBytes, canStart, setDownloads, setUploads, setTorrents } });
       await qb.setPreferences({
         // Ensure queueing is enabled so limits apply
         'queueing_enabled': true,
@@ -273,9 +306,11 @@ export class FeaturesService {
         'max_active_uploads': setUploads,
         'max_active_torrents': setTorrents,
       });
+      aqmEvents.send({ type: 'prefs-set', runId, data: { setDownloads, setUploads, setTorrents } });
       const out = { usedBytes, queuedBytes, queuedCount: queued.length, canStart, setDownloads, setUploads, setTorrents };
       this.lastAqmRunAt = new Date().toISOString();
       this.lastAqmResult = out;
+      aqmEvents.send({ type: 'summary', runId, data: out });
       try {
         this.configRepo.updateFeatures({ autoQueueManager: { lastComputedDownloads: canStart } });
       } catch {}
@@ -284,6 +319,7 @@ export class FeaturesService {
       const out = { usedBytes: 0, queuedBytes: 0, queuedCount: 0, canStart: 0, setDownloads: 0, setUploads: 0, setTorrents: 0, error: e?.message || 'Unknown error' };
       this.lastAqmRunAt = new Date().toISOString();
       this.lastAqmResult = out;
+      aqmEvents.send({ type: 'error', runId, data: { message: e?.message || 'Unknown error' } });
       return out;
     }
   }
