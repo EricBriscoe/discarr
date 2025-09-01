@@ -152,6 +152,9 @@ app.put('/api/features', async (req, res) => {
     if (payload?.orphanedMonitor) {
       await featuresService.updateOrphanSettings({ orphanedMonitor: payload.orphanedMonitor });
     }
+    if (payload?.autoQueueManager) {
+      await featuresService.updateAutoQueueSettings({ autoQueueManager: payload.autoQueueManager });
+    }
     // handle bot monitoring toggle if present
     if (payload?.botMonitoring && typeof payload.botMonitoring.enabled === 'boolean') {
       const enabled: boolean = !!payload.botMonitoring.enabled;
@@ -199,6 +202,14 @@ app.get('/api/features/orphaned-monitor/stream', async (req, res) => {
 app.post('/api/features/recheck-errored/run', async (_req, res) => {
   try {
     const result = await featuresService.runRecheckErrored();
+    res.json(result);
+  } catch (e:any) { res.status(500).json({ error: e.message }); }
+});
+
+// Auto Queue Manager: run-now
+app.post('/api/features/auto-queue/run', async (_req, res) => {
+  try {
+    const result = await featuresService.runAutoQueueManager();
     res.json(result);
   } catch (e:any) { res.status(500).json({ error: e.message }); }
 });

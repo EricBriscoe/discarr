@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState, runRecheckErroredNow, openOrphanedMonitorStream } from '../api';
+import { getFeatures, updateFeatures, runStalledCleanupNow, runOrphanedMonitorNow, FeaturesState, runRecheckErroredNow, openOrphanedMonitorStream, runAutoQueueManagerNow } from '../api';
 
 export default function Features() {
   const [state, setState] = useState<FeaturesState | null>(null);
@@ -25,6 +25,10 @@ export default function Features() {
   const [omIgnoredText, setOmIgnoredText] = useState('');
   const [rqEnabled, setRqEnabled] = useState(false);
   const [rqInterval, setRqInterval] = useState<number>(30);
+  const [aqEnabled, setAqEnabled] = useState(false);
+  const [aqInterval, setAqInterval] = useState<number>(10);
+  const [aqMaxGb, setAqMaxGb] = useState<number>(0);
+  const [aqMaxActive, setAqMaxActive] = useState<number>(5);
   const [omStreaming, setOmStreaming] = useState(false);
   const [omLog, setOmLog] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
@@ -57,6 +61,10 @@ export default function Features() {
       setOmIgnoredText((s.orphanedMonitor?.ignored || []).join('\n'));
       setRqEnabled(!!s.qbittorrentRecheckErrored?.enabled);
       setRqInterval(s.qbittorrentRecheckErrored?.intervalMinutes ?? 30);
+      setAqEnabled(!!s.autoQueueManager?.enabled);
+      setAqInterval(s.autoQueueManager?.intervalMinutes ?? 10);
+      setAqMaxActive(s.autoQueueManager?.maxActiveTorrents ?? 5);
+      setAqMaxGb(Math.max(0, Math.floor((s.autoQueueManager?.maxStorageBytes || 0) / (1024*1024*1024))));
     }
     catch (e:any) { setError(e.message || 'Failed to load features'); }
     finally { setLoading(false); }
@@ -120,6 +128,12 @@ export default function Features() {
           directories: dirs,
           ignored,
           connection: { host: omHost, port: omPort, username: omUser }
+        },
+        autoQueueManager: {
+          enabled: aqEnabled,
+          intervalMinutes: aqInterval,
+          maxActiveTorrents: aqMaxActive,
+          maxStorageBytes: Math.max(0, Math.floor(aqMaxGb) * 1024 * 1024 * 1024),
         }
       };
       if (omPass && omPass.trim()) payload.orphanedMonitor.connection.password = omPass.trim();
@@ -312,6 +326,39 @@ export default function Features() {
           )}
           </>
         )}
+      </section>
+
+      <section className="card" style={{marginTop:'1rem'}}>
+        <div className="row" style={{justifyContent:'space-between'}}>
+          <h3>Auto Queue Manager</h3>
+          <label>
+            <input type="checkbox" checked={aqEnabled} onChange={(e)=>setAqEnabled(e.target.checked)} disabled={saving || loading} /> Enable
+          </label>
+        </div>
+        <div style={{color:'var(--muted)', marginBottom:'.5rem'}}>Adjusts qBittorrent queue limits to avoid exceeding your storage quota.</div>
+        <div className="grid">
+          <div>
+            <label>Interval (minutes)</label>
+            <input className="input" type="number" min={1} value={aqInterval} onChange={(e:any)=>setAqInterval(parseInt(e.target.value||'10',10))} />
+          </div>
+          <div>
+            <label>Max storage space (GB)</label>
+            <input className="input" type="number" min={0} value={aqMaxGb} onChange={(e:any)=>setAqMaxGb(parseInt(e.target.value||'0',10))} />
+          </div>
+          <div>
+            <label>Max active torrents</label>
+            <input className="input" type="number" min={0} value={aqMaxActive} onChange={(e:any)=>setAqMaxActive(parseInt(e.target.value||'5',10))} />
+          </div>
+        </div>
+        <div className="row" style={{marginTop:'.5rem'}}>
+          <button className="primary" onClick={async ()=>{ setRunning(true); try { const r = await runAutoQueueManagerNow(); await load(); window.alert(`Set downloads=${r.setDownloads}, uploads=${r.setUploads}, total=${r.setTorrents}`); } catch (e:any) { window.alert(e.message||'Failed'); } finally { setRunning(false); } }} disabled={running || loading}>Run Now</button>
+          {state?.autoQueueManager?.lastRunAt && <span className="pill ok">Last run: {new Date(state.autoQueueManager.lastRunAt).toLocaleString()}</span>}
+          {state?.autoQueueManager?.lastRunResult && (
+            state.autoQueueManager.lastRunResult.error
+              ? <span className="pill err">Error: {state.autoQueueManager.lastRunResult.error}</span>
+              : <span className="pill ok">Can start: {state.autoQueueManager.lastRunResult.canStart} (used {Math.round((state.autoQueueManager.lastRunResult.usedBytes||0)/(1024*1024*1024))} GB)</span>
+          )}
+        </div>
       </section>
 
       <div className="row" style={{marginTop:'1rem', justifyContent:'flex-end'}}>

@@ -100,6 +100,14 @@ export interface FeaturesState {
     lastRunAt?: string;
     lastRunResult?: { scanned: number; orphaned: number; deleted: number; expected?: number; torrents?: number; qbFiles?: number; dirCounts?: Array<{ dir: string; files: number; sizeBytes?: number }>; errors?: string[] };
   };
+  autoQueueManager: {
+    enabled: boolean;
+    intervalMinutes: number;
+    maxStorageBytes: number;
+    maxActiveTorrents: number;
+    lastRunAt?: string;
+    lastRunResult?: { usedBytes: number; queuedBytes: number; queuedCount: number; canStart: number; setDownloads: number; setUploads: number; setTorrents: number; error?: string };
+  };
 }
 
 export async function getFeatures(): Promise<FeaturesState> {
@@ -136,5 +144,11 @@ export function openOrphanedMonitorStream(onMessage: (ev: MessageEvent) => void)
 export async function runRecheckErroredNow() {
   const res = await fetch(`${BASE}/api/features/recheck-errored/run`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to run recheck');
+  return res.json();
+}
+
+export async function runAutoQueueManagerNow() {
+  const res = await fetch(`${BASE}/api/features/auto-queue/run`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to run auto queue manager');
   return res.json();
 }

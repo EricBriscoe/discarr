@@ -11,6 +11,7 @@ export class FeaturesService {
   private cleanupTimer?: NodeJS.Timeout;
   private orphanTimer?: NodeJS.Timeout;
   private recheckTimer?: NodeJS.Timeout;
+  private aqmTimer?: NodeJS.Timeout;
 
   // runtime status
   private lastCleanupRunAt?: string; // ISO
@@ -19,6 +20,8 @@ export class FeaturesService {
   private lastOrphanResult?: { scanned: number; orphaned: number; deleted: number; expected?: number; torrents?: number; qbFiles?: number; dirCounts?: Array<{ dir: string; files: number; sizeBytes?: number }>; errors?: string[] };
   private lastRecheckRunAt?: string;
   private lastRecheckResult?: { attempted: number; rechecked: number; error?: string };
+  private lastAqmRunAt?: string;
+  private lastAqmResult?: { usedBytes: number; queuedBytes: number; queuedCount: number; canStart: number; setDownloads: number; setUploads: number; setTorrents: number; error?: string };
 
   constructor(configRepo: ConfigRepo) {
     this.configRepo = configRepo;
@@ -48,6 +51,10 @@ export class FeaturesService {
       clearInterval(this.recheckTimer);
       this.recheckTimer = undefined;
     }
+    if (this.aqmTimer) {
+      clearInterval(this.aqmTimer);
+      this.aqmTimer = undefined;
+    }
     if (features.stalledDownloadCleanup.enabled) {
       const everyMs = Math.max(1, features.stalledDownloadCleanup.intervalMinutes || 15) * 60_000;
       this.cleanupTimer = setInterval(() => {
@@ -67,6 +74,12 @@ export class FeaturesService {
         this.runRecheckErrored().catch(() => void 0);
       }, everyMs);
     }
+    if (features.autoQueueManager.enabled) {
+      const everyMs = Math.max(1, features.autoQueueManager.intervalMinutes || 10) * 60_000;
+      this.aqmTimer = setInterval(() => {
+        this.runAutoQueueManager().catch(() => void 0);
+      }, everyMs);
+    }
   }
 
   async updateSettings(p: { stalledDownloadCleanup?: { enabled?: boolean; intervalMinutes?: number; minAgeMinutes?: number } }) {
@@ -81,6 +94,11 @@ export class FeaturesService {
 
   async updateRecheckSettings(p: { qbittorrentRecheckErrored?: { enabled?: boolean; intervalMinutes?: number } }) {
     this.configRepo.updateFeatures({ qbittorrentRecheckErrored: p.qbittorrentRecheckErrored });
+    this.applyScheduling();
+  }
+  
+  async updateAutoQueueSettings(p: { autoQueueManager?: { enabled?: boolean; intervalMinutes?: number; maxStorageBytes?: number; maxActiveTorrents?: number } }) {
+    this.configRepo.updateFeatures({ autoQueueManager: p.autoQueueManager });
     this.applyScheduling();
   }
 
@@ -169,6 +187,14 @@ export class FeaturesService {
         totalDeleted: f.orphanedMonitor.totalDeleted,
         lastRunAt: this.lastOrphanRunAt,
         lastRunResult: this.lastOrphanResult,
+      },
+      autoQueueManager: {
+        enabled: f.autoQueueManager.enabled,
+        intervalMinutes: f.autoQueueManager.intervalMinutes,
+        maxStorageBytes: f.autoQueueManager.maxStorageBytes,
+        maxActiveTorrents: f.autoQueueManager.maxActiveTorrents,
+        lastRunAt: this.lastAqmRunAt,
+        lastRunResult: this.lastAqmResult,
       }
     };
   }
@@ -196,6 +222,64 @@ export class FeaturesService {
       const out = { attempted: 0, rechecked: 0, error: e?.message || 'Unknown error' };
       this.lastRecheckRunAt = new Date().toISOString();
       this.lastRecheckResult = out;
+      return out;
+    }
+  }
+
+  async runAutoQueueManager(): Promise<{ usedBytes: number; queuedBytes: number; queuedCount: number; canStart: number; setDownloads: number; setUploads: number; setTorrents: number; error?: string }> {
+    const cfg = this.configRepo.getEffectiveConfig();
+    const f = this.configRepo.getFeatures();
+    const aq = f.autoQueueManager;
+    if (!cfg.services.qbittorrent) {
+      const out = { usedBytes: 0, queuedBytes: 0, queuedCount: 0, canStart: 0, setDownloads: 0, setUploads: 0, setTorrents: 0, error: 'qBittorrent not configured' };
+      this.lastAqmRunAt = new Date().toISOString();
+      this.lastAqmResult = out;
+      return out;
+    }
+    try {
+      const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
+      const torrents = await qb.getTorrents();
+      // Completed torrents use space
+      const completed = torrents.filter(t => t.progress >= 0.9999 || /UP$/.test(t.state) || /(uploading|stalledUP|queuedUP|forcedUP)/.test(t.state));
+      const usedBytes = completed.reduce((sum, t) => sum + (typeof t.size === 'number' ? t.size : 0), 0);
+      const quota = Math.max(0, aq.maxStorageBytes || 0);
+      const available = Math.max(0, quota - usedBytes);
+      // Queued downloads in order of added time (oldest first)
+      const queued = torrents
+        .filter(t => t.state === 'queuedDL')
+        .sort((a,b) => (a.added_on || 0) - (b.added_on || 0));
+      let canStart = 0;
+      let acc = 0;
+      let queuedBytes = 0;
+      for (const t of queued) {
+        const sz = typeof t.size === 'number' ? t.size : 0;
+        queuedBytes += sz;
+        if (acc + sz <= available) {
+          acc += sz;
+          canStart++;
+        } else {
+          break;
+        }
+      }
+      const setDownloads = Math.max(0, canStart);
+      const setUploads = Math.max(0, aq.maxActiveTorrents || 0);
+      const setTorrents = Math.max(0, aq.maxActiveTorrents || 0);
+      await qb.setPreferences({
+        'queueing_max_active_downloads': setDownloads,
+        'queueing_max_active_uploads': setUploads,
+        'queueing_max_active_torrents': setTorrents,
+      });
+      const out = { usedBytes, queuedBytes, queuedCount: queued.length, canStart, setDownloads, setUploads, setTorrents };
+      this.lastAqmRunAt = new Date().toISOString();
+      this.lastAqmResult = out;
+      try {
+        this.configRepo.updateFeatures({ autoQueueManager: { lastComputedDownloads: canStart } });
+      } catch {}
+      return out;
+    } catch (e:any) {
+      const out = { usedBytes: 0, queuedBytes: 0, queuedCount: 0, canStart: 0, setDownloads: 0, setUploads: 0, setTorrents: 0, error: e?.message || 'Unknown error' };
+      this.lastAqmRunAt = new Date().toISOString();
+      this.lastAqmResult = out;
       return out;
     }
   }
