@@ -11,6 +11,7 @@ import { BotController } from './services/bot-controller';
 import { FeaturesService } from './services/features-service';
 import { orphanEvents } from './services/orphaned-monitor-events';
 import { aqmEvents } from './services/aqm-events';
+import { cleanupEvents } from './services/stalled-cleanup-events';
 // SSO-protected deployment: no in-app auth middleware
 
 // __dirname is available in CommonJS output; keep it simple
@@ -208,6 +209,14 @@ app.get('/api/features/orphaned-monitor/stream', async (req, res) => {
   res.flushHeaders?.();
   orphanEvents.addClient(res);
   req.on('close', () => orphanEvents.removeClient(res));
+});
+
+// SSE stream for stalled cleanup progress
+app.get('/api/features/stalled-cleanup/stream', async (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+  res.flushHeaders?.();
+  cleanupEvents.addClient(res);
+  req.on('close', () => cleanupEvents.removeClient(res));
 });
 
 // SSE stream for auto-queue manager progress
