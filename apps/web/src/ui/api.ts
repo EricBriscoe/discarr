@@ -50,6 +50,7 @@ export interface AdminConfig {
   services: {
     radarr: { url: string; apiKeySet: boolean };
     sonarr: { url: string; apiKeySet: boolean };
+    lidarr: { url: string; apiKeySet: boolean };
     plex: { url: string };
     qbittorrent: { url: string; username: string; passwordSet: boolean };
   };

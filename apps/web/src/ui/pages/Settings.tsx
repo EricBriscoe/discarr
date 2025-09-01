@@ -15,11 +15,13 @@ export default function Settings() {
   // Services config state
   const [radarrUrl, setRadarrUrl] = useState('');
   const [sonarrUrl, setSonarrUrl] = useState('');
+  const [lidarrUrl, setLidarrUrl] = useState('');
   const [plexUrl, setPlexUrl] = useState('');
   const [qbUrl, setQbUrl] = useState('');
   const [qbUser, setQbUser] = useState('');
   const [radarrKey, setRadarrKey] = useState('');
   const [sonarrKey, setSonarrKey] = useState('');
+  const [lidarrKey, setLidarrKey] = useState('');
   const [qbPass, setQbPass] = useState('');
 
   // Monitoring config state (seconds in UI)
@@ -47,6 +49,8 @@ export default function Settings() {
       setQbUser(cfg.services.qbittorrent?.username || '');
       setRadarrKey(cfg.services.radarr?.apiKeySet ? SECRET_MASK : '');
       setSonarrKey(cfg.services.sonarr?.apiKeySet ? SECRET_MASK : '');
+      setLidarrUrl((cfg as any).services?.lidarr?.url || '');
+      setLidarrKey((cfg as any).services?.lidarr?.apiKeySet ? SECRET_MASK : '');
       setQbPass(cfg.services.qbittorrent?.passwordSet ? SECRET_MASK : '');
 
       // Monitoring (convert ms to s if present)
@@ -101,6 +105,16 @@ export default function Settings() {
       if (k && k !== SECRET_MASK) services.sonarr.apiKey = k;
       await updateAdminConfig({ services }); await load(); setSaved(true); setTimeout(()=>setSaved(false), 1500);
     } catch (e:any) { setError(e.message || 'Failed to save Sonarr'); } finally { setLoading(false); }
+  }
+
+  async function saveLidarr() {
+    try {
+      setLoading(true); setError(null);
+      const services: any = { lidarr: { url: lidarrUrl.trim() } };
+      const k = lidarrKey.trim();
+      if (k && k !== SECRET_MASK) services.lidarr.apiKey = k;
+      await updateAdminConfig({ services }); await load(); setSaved(true); setTimeout(()=>setSaved(false), 1500);
+    } catch (e:any) { setError(e.message || 'Failed to save Lidarr'); } finally { setLoading(false); }
   }
 
   async function savePlex() {
@@ -173,6 +187,16 @@ export default function Settings() {
         <input className="input" placeholder="Sonarr API Key" value={sonarrKey} onChange={(e: React.ChangeEvent<HTMLInputElement>)=>setSonarrKey(e.target.value)} style={{marginTop:'.3rem'}} />
         <div className="row" style={{marginTop:'.5rem'}}>
           <button className="primary" onClick={saveSonarr} disabled={loading}>Save Sonarr</button>
+          {saved && <span className="pill ok">Saved</span>}
+        </div>
+      </section>
+
+      <section className="card" style={{marginTop:'1rem'}}>
+        <h3>Lidarr</h3>
+        <input className="input" placeholder="Lidarr URL" value={lidarrUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>)=>setLidarrUrl(e.target.value)} />
+        <input className="input" placeholder="Lidarr API Key" value={lidarrKey} onChange={(e: React.ChangeEvent<HTMLInputElement>)=>setLidarrKey(e.target.value)} style={{marginTop:'.3rem'}} />
+        <div className="row" style={{marginTop:'.5rem'}}>
+          <button className="primary" onClick={saveLidarr} disabled={loading}>Save Lidarr</button>
           {saved && <span className="pill ok">Saved</span>}
         </div>
       </section>
