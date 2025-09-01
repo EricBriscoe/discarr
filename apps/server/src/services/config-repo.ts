@@ -49,6 +49,13 @@ type FeatureSettings = {
     ignored?: string[];
     totalDeleted?: number; // cumulative files deleted
   }
+  autoQueueManager?: {
+    enabled?: boolean;
+    intervalMinutes?: number; // default 10
+    maxStorageBytes?: number; // storage quota in bytes
+    maxActiveTorrents?: number; // will apply to both uploads and total
+    lastComputedDownloads?: number; // snapshot only
+  }
 };
 type SettingsFile = { discord?: DiscordSettings; services?: ServicesSettings; monitoring?: MonitoringSettings; features?: FeatureSettings };
 
@@ -199,6 +206,13 @@ export class ConfigRepo {
           : ['.stfolder'],
         totalDeleted: f.orphanedMonitor?.totalDeleted ?? 0,
       },
+      autoQueueManager: {
+        enabled: f.autoQueueManager?.enabled ?? false,
+        intervalMinutes: f.autoQueueManager?.intervalMinutes ?? 10,
+        maxStorageBytes: typeof f.autoQueueManager?.maxStorageBytes === 'number' ? f.autoQueueManager!.maxStorageBytes! : 0,
+        maxActiveTorrents: typeof f.autoQueueManager?.maxActiveTorrents === 'number' ? f.autoQueueManager!.maxActiveTorrents! : 5,
+        lastComputedDownloads: typeof f.autoQueueManager?.lastComputedDownloads === 'number' ? f.autoQueueManager!.lastComputedDownloads! : 0,
+      },
     };
   }
 
@@ -237,6 +251,17 @@ export class ConfigRepo {
         const cleaned = ig.map((s: string)=> (s||'').trim()).filter((s: string)=>s.length>0);
         (settings.features.orphanedMonitor as any).ignored = Array.from(new Set(cleaned));
       }
+    }
+    if (payload.autoQueueManager) {
+      settings.features.autoQueueManager = {
+        ...(settings.features.autoQueueManager || {}),
+        ...payload.autoQueueManager,
+      } as any;
+      // normalize numeric fields
+      const aq = settings.features.autoQueueManager as any;
+      if (typeof aq.intervalMinutes !== 'number' || aq.intervalMinutes <= 0) aq.intervalMinutes = 10;
+      if (typeof aq.maxActiveTorrents !== 'number' || aq.maxActiveTorrents < 0) aq.maxActiveTorrents = 5;
+      if (typeof aq.maxStorageBytes !== 'number' || aq.maxStorageBytes < 0) aq.maxStorageBytes = 0;
     }
     if (payload.qbittorrentRecheckErrored) {
       settings.features.qbittorrentRecheckErrored = {

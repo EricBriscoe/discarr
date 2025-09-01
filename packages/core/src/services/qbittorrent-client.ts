@@ -226,6 +226,14 @@ export class QBittorrentClient {
     return this.authenticatedRequest<QBittorrentTransferInfo>('/api/v2/transfer/info');
   }
 
+  // Set qBittorrent application preferences. Only include keys you want to change.
+  // Example keys: queueing_max_active_downloads, queueing_max_active_uploads, queueing_max_active_torrents
+  async setPreferences(prefs: Record<string, any>): Promise<void> {
+    const formData = new URLSearchParams();
+    formData.append('json', JSON.stringify(prefs));
+    await this.authenticatedRequest('/api/v2/app/setPreferences', 'POST', formData);
+  }
+
   async getTorrentStats(): Promise<QBittorrentStats> {
     const torrents = await this.getTorrents();
     const stats = {
