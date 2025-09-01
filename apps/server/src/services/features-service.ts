@@ -108,10 +108,10 @@ export class FeaturesService {
   async runStalledCleanup(p?: { ignoreMinAge?: boolean }): Promise<CleanupResult> {
     const cfg = this.configRepo.getEffectiveConfig();
     const f = this.configRepo.getFeatures();
-    const minAgeMinutes = f.stalledDownloadCleanup.minAgeMinutes ?? 60;
-    const thresholdSec = Math.max(1, minAgeMinutes) * 60;
+    const noActivityMinutes = f.stalledDownloadCleanup.minAgeMinutes ?? 60;
+    const thresholdSec = Math.max(1, noActivityMinutes) * 60;
     const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
-    cleanupEvents.send({ type: 'start', runId, data: { minAgeMinutes, ignoreMinAge: !!p?.ignoreMinAge } });
+    cleanupEvents.send({ type: 'start', runId, data: { noActivityMinutes, ignoreMinAge: !!p?.ignoreMinAge } });
 
     if (!cfg.services.qbittorrent) {
       const result: CleanupResult = { attempted: 0, removed: 0, error: 'qBittorrent not configured' };
@@ -127,12 +127,14 @@ export class FeaturesService {
       const stale = torrents.filter(t => {
         const isStalledDl = t.state === 'stalledDL';
         const isMetaDl = t.state === 'metaDL';
+        if (p?.ignoreMinAge) return (isStalledDl || isMetaDl);
         const addedOn = (t as any).added_on as number | undefined;
-        if (p?.ignoreMinAge) {
-          return (isStalledDl || isMetaDl);
-        }
-        const ageOk = typeof addedOn === 'number' ? (nowSec - addedOn) >= thresholdSec : false;
-        return (isStalledDl || isMetaDl) && ageOk;
+        const lastActivity = (t as any).last_activity as number | undefined;
+        const inactiveSec = typeof lastActivity === 'number' && lastActivity > 0
+          ? (nowSec - lastActivity)
+          : (typeof addedOn === 'number' ? (nowSec - addedOn) : Number.MAX_SAFE_INTEGER);
+        const inactivityOk = inactiveSec >= thresholdSec;
+        return (isStalledDl || isMetaDl) && inactivityOk;
       });
       const hashes = stale.map(t => t.hash);
       cleanupEvents.send({ type: 'stale-found', runId, data: { count: hashes.length } });

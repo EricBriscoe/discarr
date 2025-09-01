@@ -13,6 +13,8 @@ export interface QBittorrentTorrent {
   completed: number;
   // epoch seconds when torrent was added (as returned by qBittorrent API)
   added_on?: number;
+  // epoch seconds of last upload/download activity (qBittorrent API)
+  last_activity?: number;
   save_path?: string;
   content_path?: string;
 }
