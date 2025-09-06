@@ -15,6 +15,7 @@ export class FeaturesService {
   private orphanTimer?: NodeJS.Timeout;
   private recheckTimer?: NodeJS.Timeout;
   private aqmTimer?: NodeJS.Timeout;
+  private aqmRunning: boolean = false;
 
   // runtime status
   private lastCleanupRunAt?: string; // ISO
@@ -265,19 +266,26 @@ export class FeaturesService {
   }
 
   async runAutoQueueManager(): Promise<{ usedBytes: number; queuedBytes: number; queuedCount: number; canStart: number; setDownloads: number; setUploads: number; setTorrents: number; error?: string }> {
-    const cfg = this.configRepo.getEffectiveConfig();
-    const f = this.configRepo.getFeatures();
-    const aq = f.autoQueueManager;
     const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
-    aqmEvents.send({ type: 'start', runId, data: { intervalMinutes: aq.intervalMinutes, maxStorageBytes: aq.maxStorageBytes, maxActiveTorrents: aq.maxActiveTorrents } });
-    if (!cfg.services.qbittorrent) {
-      const out = { usedBytes: 0, queuedBytes: 0, queuedCount: 0, canStart: 0, setDownloads: 0, setUploads: 0, setTorrents: 0, error: 'qBittorrent not configured' };
-      this.lastAqmRunAt = new Date().toISOString();
-      this.lastAqmResult = out;
-      aqmEvents.send({ type: 'error', runId, data: { message: 'qBittorrent not configured' } });
-      return out;
+    if (this.aqmRunning) {
+      aqmEvents.send({ type: 'skip-running', runId, data: { message: 'Auto Queue Manager is already running' } });
+      const last = this.lastAqmResult || { usedBytes: 0, queuedBytes: 0, queuedCount: 0, canStart: 0, setDownloads: 0, setUploads: 0, setTorrents: 0 };
+      return { ...last, error: 'already running' } as any;
     }
+    this.aqmRunning = true;
     try {
+      const cfg = this.configRepo.getEffectiveConfig();
+      const f = this.configRepo.getFeatures();
+      const aq = f.autoQueueManager;
+      aqmEvents.send({ type: 'start', runId, data: { intervalMinutes: aq.intervalMinutes, maxStorageBytes: aq.maxStorageBytes, maxActiveTorrents: aq.maxActiveTorrents } });
+      if (!cfg.services.qbittorrent) {
+        const out = { usedBytes: 0, queuedBytes: 0, queuedCount: 0, canStart: 0, setDownloads: 0, setUploads: 0, setTorrents: 0, error: 'qBittorrent not configured' };
+        this.lastAqmRunAt = new Date().toISOString();
+        this.lastAqmResult = out;
+        aqmEvents.send({ type: 'error', runId, data: { message: 'qBittorrent not configured' } });
+        return out;
+      }
+      
       const qb = new QBittorrentClient({ baseUrl: cfg.services.qbittorrent.url, username: cfg.services.qbittorrent.username, password: cfg.services.qbittorrent.password });
       aqmEvents.send({ type: 'qbit-connected', runId });
       const torrents = await qb.getTorrents();
@@ -390,6 +398,8 @@ export class FeaturesService {
       this.lastAqmResult = out;
       aqmEvents.send({ type: 'error', runId, data: { message: e?.message || 'Unknown error' } });
       return out;
+    } finally {
+      this.aqmRunning = false;
     }
   }
 
@@ -449,27 +459,50 @@ export class FeaturesService {
         if (res.status !== 'fulfilled') continue;
         const { t, files } = res.value as { t: any; files: any[] };
         qbFilesTotal += (files as any[]).length;
-        const base = (t.save_path && t.save_path.trim().length>0) ? t.save_path as string : (t.content_path ? path.dirname(t.content_path as string) : '');
-        if (!base) continue;
-        const normBase = base.replaceAll('\\','/');
+        // Determine all plausible base directories where files may exist.
+        // Prefer current download/root locations, but also include save_path for completed moves.
+        const bases = new Set<string>();
+        const sp = (t.save_path || '').toString().trim();
+        const dp = ((t as any).download_path || '').toString().trim();
+        const rp = ((t as any).root_path || '').toString().trim();
+        const cp = (t.content_path || '').toString().trim();
+        if (rp) bases.add(rp);
+        if (dp) bases.add(dp);
+        if (sp) bases.add(sp);
+        if (cp) bases.add(path.posix.dirname(cp));
+        // Normalize to posix-style
+        const normBases = Array.from(bases).map((b) => b.replaceAll('\\','/'));
         for (const f of files) {
-          const rel = (f.name || '').replaceAll('\\','/');
-          const abs = path.posix.normalize(path.posix.join(normBase, rel));
-          expected.add(abs);
-          // Include in-progress variants so we don't mark them orphaned
-          expected.add(`${abs}.!qB`);
-          expected.add(`${abs}.!qb`);
+          const rel = (f.name || '').toString().replaceAll('\\','/');
+          for (const b of normBases) {
+            const abs = path.posix.normalize(path.posix.join(b, rel));
+            expected.add(abs);
+            // Include in-progress variants so we don't mark them orphaned
+            expected.add(`${abs}.!qB`);
+            expected.add(`${abs}.!qb`);
+          }
         }
-        // If no files returned (rare), include content_path itself
-        if ((files as any[]).length === 0 && t.content_path) {
-          const cp = path.posix.normalize((t.content_path as string).replaceAll('\\','/'));
-          expected.add(cp);
-          expected.add(`${cp}.!qB`);
-          expected.add(`${cp}.!qb`);
+        // If no files returned (rare), include content_path itself and both in-progress variants
+        if ((files as any[]).length === 0 && cp) {
+          const cpNorm = path.posix.normalize(cp.replaceAll('\\','/'));
+          expected.add(cpNorm);
+          expected.add(`${cpNorm}.!qB`);
+          expected.add(`${cpNorm}.!qb`);
         }
       }
       console.log(`[OrphanedMonitor] qBittorrent files total: ${qbFilesTotal}; expected unique paths (incl. in-progress markers): ${expected.size}`);
       orphanEvents.send({ type: 'qbit-fetched', runId, data: { torrents: torrents.length, qbFiles: qbFilesTotal, expected: expected.size } });
+
+      // Safety: if we couldn't enumerate any files from qBittorrent while torrents exist,
+      // avoid deleting anything this run.
+      if (torrents.length > 0 && (qbFilesTotal === 0 || expected.size === 0)) {
+        const msg = 'qBittorrent returned no file listings; skipping orphaned deletion for safety';
+        console.warn(`[OrphanedMonitor] ${msg}`);
+        orphanEvents.send({ type: 'error', runId, data: { message: msg } });
+        const out = { scanned: 0, orphaned: 0, deleted: 0, expected: expected.size, torrents: torrents.length, qbFiles: qbFilesTotal } as any;
+        this.recordOrphan(out);
+        return out;
+      }
 
       const sftp = new SftpClient();
       console.log(`[OrphanedMonitor] Connecting via SFTP to ${conn.host}:${conn.port || 22} as ${conn.username}`);
