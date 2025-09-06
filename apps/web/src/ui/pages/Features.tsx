@@ -29,6 +29,7 @@ export default function Features() {
   const [aqInterval, setAqInterval] = useState<number>(10);
   const [aqMaxGb, setAqMaxGb] = useState<number>(0);
   const [aqMaxActive, setAqMaxActive] = useState<number>(5);
+  const [aqDoneText, setAqDoneText] = useState<string>('');
   const [omStreaming, setOmStreaming] = useState(false);
   const [omLog, setOmLog] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
@@ -71,6 +72,7 @@ export default function Features() {
       setAqInterval(s.autoQueueManager?.intervalMinutes ?? 10);
       setAqMaxActive(s.autoQueueManager?.maxActiveTorrents ?? 5);
       setAqMaxGb(Math.max(0, Math.floor((s.autoQueueManager?.maxStorageBytes || 0) / (1024*1024*1024))));
+      setAqDoneText((s.autoQueueManager?.doneLabels || []).join(', '));
     }
     catch (e:any) { setError(e.message || 'Failed to load features'); }
     finally { setLoading(false); }
@@ -166,6 +168,11 @@ export default function Features() {
         else if (type === 'qbit-connected') line += ` connected`;
         else if (type === 'torrents-fetched') line += ` total=${data?.total}`;
         else if (type === 'usage') line += ` used=${Math.round((data?.usedBytes||0)/(1024*1024*1024))}GB available=${Math.round((data?.available||0)/(1024*1024*1024))}GB`;
+        else if (type === 'computed-initial') line += ` queued=${data?.queuedCount} needFree=${data?.needBytes ? Math.round((data.needBytes)/(1024*1024*1024))+'GB' : 0}`;
+        else if (type === 'done-candidates') line += ` candidates=${data?.count}`;
+        else if (type === 'deleting') line += ` ${data?.name} size=${fmtBytes(data?.size)}`;
+        else if (type === 'deleted') line += ` freed=${fmtBytes(data?.size)} totalFreed=${fmtBytes(data?.freedBytes)} remain=${fmtBytes(data?.remainingToFree)}`;
+        else if (type === 'freeing-summary') line += ` needed=${fmtBytes(data?.needBytes)} freed=${fmtBytes(data?.freedBytes)}`;
         else if (type === 'computed') line += ` queued=${data?.queuedCount} canStart=${data?.canStart}`;
         else if (type === 'prefs-set') line += ` downloads=${data?.setDownloads} uploads=${data?.setUploads} total=${data?.setTorrents}`;
         else if (type === 'summary') line += ` downloads=${data?.setDownloads} uploads=${data?.setUploads} total=${data?.setTorrents}`;
@@ -202,6 +209,7 @@ export default function Features() {
           intervalMinutes: aqInterval,
           maxActiveTorrents: aqMaxActive,
           maxStorageBytes: Math.max(0, Math.floor(aqMaxGb) * 1024 * 1024 * 1024),
+          doneLabels: aqDoneText.split(/\s*,\s*|\r?\n|\\n/g).map((s:string)=>s.trim()).filter(Boolean),
         }
       };
       if (omPass && omPass.trim()) payload.orphanedMonitor.connection.password = omPass.trim();
@@ -421,6 +429,11 @@ export default function Features() {
           <div>
             <label>Max active torrents</label>
             <input className="input" type="number" min={0} value={aqMaxActive} onChange={(e:any)=>setAqMaxActive(parseInt(e.target.value||'5',10))} />
+          </div>
+          <div>
+            <label>Done labels (comma-separated)</label>
+            <input className="input" placeholder="e.g. done, finished" value={aqDoneText} onChange={(e:any)=>setAqDoneText(e.target.value)} />
+            <div style={{color:'var(--muted)', fontSize:'.9em', marginTop:'.25rem'}}>Torrents with these labels (category or tags) may be auto-deleted to free space.</div>
           </div>
         </div>
         <div className="row" style={{marginTop:'.5rem'}}>

@@ -56,6 +56,7 @@ type FeatureSettings = {
     maxStorageBytes?: number; // storage quota in bytes
     maxActiveTorrents?: number; // will apply to both uploads and total
     lastComputedDownloads?: number; // snapshot only
+    doneLabels?: string[]; // labels/categories considered safe to auto-delete
   }
 };
 type SettingsFile = { discord?: DiscordSettings; services?: ServicesSettings; monitoring?: MonitoringSettings; features?: FeatureSettings };
@@ -217,6 +218,7 @@ export class ConfigRepo {
         maxStorageBytes: typeof f.autoQueueManager?.maxStorageBytes === 'number' ? f.autoQueueManager!.maxStorageBytes! : 0,
         maxActiveTorrents: typeof f.autoQueueManager?.maxActiveTorrents === 'number' ? f.autoQueueManager!.maxActiveTorrents! : 5,
         lastComputedDownloads: typeof f.autoQueueManager?.lastComputedDownloads === 'number' ? f.autoQueueManager!.lastComputedDownloads! : 0,
+        doneLabels: Array.isArray(f.autoQueueManager?.doneLabels) ? (f.autoQueueManager!.doneLabels as string[]) : [],
       },
     };
   }
@@ -267,6 +269,13 @@ export class ConfigRepo {
       if (typeof aq.intervalMinutes !== 'number' || aq.intervalMinutes <= 0) aq.intervalMinutes = 10;
       if (typeof aq.maxActiveTorrents !== 'number' || aq.maxActiveTorrents < 0) aq.maxActiveTorrents = 5;
       if (typeof aq.maxStorageBytes !== 'number' || aq.maxStorageBytes < 0) aq.maxStorageBytes = 0;
+      // normalize labels (trim, drop empty, de-dup)
+      if (Array.isArray(aq.doneLabels)) {
+        const cleaned = aq.doneLabels
+          .map((s: string)=> (s||'').trim())
+          .filter((s: string)=> s.length>0);
+        aq.doneLabels = Array.from(new Set(cleaned));
+      }
     }
     if (payload.qbittorrentRecheckErrored) {
       settings.features.qbittorrentRecheckErrored = {

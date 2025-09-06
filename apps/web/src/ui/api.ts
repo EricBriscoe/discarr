@@ -106,6 +106,7 @@ export interface FeaturesState {
     intervalMinutes: number;
     maxStorageBytes: number;
     maxActiveTorrents: number;
+    doneLabels: string[];
     lastRunAt?: string;
     lastRunResult?: { usedBytes: number; queuedBytes: number; queuedCount: number; canStart: number; setDownloads: number; setUploads: number; setTorrents: number; error?: string };
   };
