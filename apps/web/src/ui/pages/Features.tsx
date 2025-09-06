@@ -168,6 +168,7 @@ export default function Features() {
         else if (type === 'qbit-connected') line += ` connected`;
         else if (type === 'torrents-fetched') line += ` total=${data?.total}`;
         else if (type === 'usage') line += ` used=${Math.round((data?.usedBytes||0)/(1024*1024*1024))}GB available=${Math.round((data?.available||0)/(1024*1024*1024))}GB`;
+        else if (type === 'skip-running') line += ` ${data?.message || 'already running'}`;
         else if (type === 'computed-initial') line += ` queued=${data?.queuedCount} needFree=${data?.needBytes ? Math.round((data.needBytes)/(1024*1024*1024))+'GB' : 0}`;
         else if (type === 'done-candidates') line += ` candidates=${data?.count}`;
         else if (type === 'deleting') line += ` ${data?.name} size=${fmtBytes(data?.size)}`;
