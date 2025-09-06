@@ -230,6 +230,7 @@ export class FeaturesService {
         intervalMinutes: f.autoQueueManager.intervalMinutes,
         maxStorageBytes: f.autoQueueManager.maxStorageBytes,
         maxActiveTorrents: f.autoQueueManager.maxActiveTorrents,
+        doneLabels: (f.autoQueueManager as any).doneLabels,
         lastRunAt: this.lastAqmRunAt,
         lastRunResult: this.lastAqmResult,
       }
@@ -288,16 +289,73 @@ export class FeaturesService {
       const available = Math.max(0, quota - usedBytes);
       aqmEvents.send({ type: 'usage', runId, data: { completed: completed.length, usedBytes, quota, available } });
       // Queued downloads in order of added time (oldest first)
+      // Use qBittorrent's queue order when selecting which queued items can start.
+      // Sort by torrent "priority" (queue position) ascending; fallback to added_on when missing.
       const queued = torrents
         .filter(t => t.state === 'queuedDL')
-        .sort((a,b) => (a.added_on || 0) - (b.added_on || 0));
+        .sort((a: any, b: any) => {
+          const pa = typeof a.priority === 'number' ? a.priority : Number.MAX_SAFE_INTEGER;
+          const pb = typeof b.priority === 'number' ? b.priority : Number.MAX_SAFE_INTEGER;
+          if (pa !== pb) return pa - pb;
+          const aa = (a.added_on || 0) as number; const ab = (b.added_on || 0) as number;
+          return aa - ab;
+        });
+      // Sum queued bytes and initial canStart
+      let queuedBytes = 0;
+      for (const t of queued) queuedBytes += (typeof t.size === 'number' ? t.size : 0);
+      const needBytes = Math.max(0, queuedBytes - available);
+      aqmEvents.send({ type: 'computed-initial', runId, data: { queuedCount: queued.length, queuedBytes, available, needBytes } });
+
+      // Optional auto-delete of "done" label torrents to free space
+      let freedBytes = 0;
+      let usedBytesAdj = usedBytes;
+      if (needBytes > 0 && Array.isArray((aq as any).doneLabels) && (aq as any).doneLabels.length > 0) {
+        const labels = ((aq as any).doneLabels as string[]).map(s => (s||'').trim().toLowerCase()).filter(Boolean);
+        const hasLabel = (t: any) => {
+          const cat = (t.category || '').toLowerCase();
+          if (labels.includes(cat)) return true;
+          // tags is a comma-separated string
+          const tags = (t.tags || '').toLowerCase().split(',').map((s:string)=>s.trim()).filter(Boolean);
+          return tags.some((tg:string)=> labels.includes(tg));
+        };
+        // Consider only completed/seeding torrents as deletion candidates
+        const doneCandidates = torrents.filter(t => (t.progress >= 0.9999 || /(uploading|stalledUP|queuedUP|forcedUP)/.test(t.state)) && hasLabel(t));
+        aqmEvents.send({ type: 'done-candidates', runId, data: { count: doneCandidates.length } });
+        // Fetch properties to sort by least seeded data (total_uploaded)
+        const propResults = await Promise.allSettled(doneCandidates.map(t => qb.getTorrentProperties(t.hash)));
+        const enriched = doneCandidates.map((t, i) => {
+          const pr = propResults[i];
+          const props = (pr.status === 'fulfilled' ? (pr.value || {}) : {}) as any;
+          const uploaded = typeof props.total_uploaded === 'number' ? props.total_uploaded : 0;
+          return { t, uploaded };
+        });
+        enriched.sort((a,b)=> (a.uploaded - b.uploaded));
+        let toFree = needBytes;
+        for (const { t } of enriched) {
+          if (toFree <= 0) break;
+          const sz = typeof t.size === 'number' ? t.size : 0;
+          aqmEvents.send({ type: 'deleting', runId, data: { name: t.name, size: sz, hash: t.hash } });
+          const res = await qb.deleteTorrents([t.hash], true);
+          const ok = res && res[0] && res[0].success;
+          if (ok) {
+            freedBytes += sz;
+            usedBytesAdj = Math.max(0, usedBytesAdj - sz);
+            toFree = Math.max(0, toFree - sz);
+            aqmEvents.send({ type: 'deleted', runId, data: { name: t.name, size: sz, freedBytes, remainingToFree: toFree } });
+          } else {
+            aqmEvents.send({ type: 'delete-failed', runId, data: { name: t.name, size: sz, hash: t.hash } });
+          }
+        }
+        aqmEvents.send({ type: 'freeing-summary', runId, data: { needBytes, freedBytes } });
+      }
+
+      // Recompute available and canStart after any deletion
+      const availableFinal = Math.max(0, (aq.maxStorageBytes || 0) - usedBytesAdj);
       let canStart = 0;
       let acc = 0;
-      let queuedBytes = 0;
       for (const t of queued) {
         const sz = typeof t.size === 'number' ? t.size : 0;
-        queuedBytes += sz;
-        if (acc + sz <= available) {
+        if (acc + sz <= availableFinal) {
           acc += sz;
           canStart++;
         } else {
@@ -318,7 +376,7 @@ export class FeaturesService {
         'max_active_torrents': setTorrents,
       });
       aqmEvents.send({ type: 'prefs-set', runId, data: { setDownloads, setUploads, setTorrents } });
-      const out = { usedBytes, queuedBytes, queuedCount: queued.length, canStart, setDownloads, setUploads, setTorrents };
+      const out = { usedBytes: usedBytesAdj, queuedBytes, queuedCount: queued.length, canStart, setDownloads, setUploads, setTorrents };
       this.lastAqmRunAt = new Date().toISOString();
       this.lastAqmResult = out;
       aqmEvents.send({ type: 'summary', runId, data: out });

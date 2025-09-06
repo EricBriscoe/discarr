@@ -127,7 +127,7 @@ export class QBittorrentClient {
     }
   }
 
-  private async authenticatedRequest<T>(endpoint: string, method: 'GET' | 'POST' = 'GET', data?: any): Promise<T> {
+  private async authenticatedRequest<T>(endpoint: string, method: 'GET' | 'POST' = 'GET', data?: any, options?: { timeoutMs?: number }): Promise<T> {
     if (!this.sessionCookie) {
       await this.authenticate();
     }
@@ -149,14 +149,14 @@ export class QBittorrentClient {
       method,
       headers,
       body,
-      signal: AbortSignal.timeout(10000)
+      signal: AbortSignal.timeout(options?.timeoutMs ?? 10000)
     });
 
     if (!response.ok) {
       if (response.status === 403) {
         this.sessionCookie = undefined;
         await this.authenticate();
-        return this.authenticatedRequest(endpoint, method, data);
+        return this.authenticatedRequest(endpoint, method, data, options);
       }
       throw new Error(`qBittorrent API error: ${response.status}`);
     }
@@ -180,6 +180,14 @@ export class QBittorrentClient {
     return torrents
       .filter(t => t.state === 'error' || t.state === 'missingFiles')
       .map(t => ({ hash: t.hash, name: t.name, state: t.state, category: t.category }));
+  }
+
+  // Fetch detailed properties for a single torrent. Includes fields like
+  // total_uploaded, total_downloaded, ratio, last_activity, etc.
+  async getTorrentProperties(hash: string): Promise<any> {
+    const params = new URLSearchParams();
+    params.append('hash', hash);
+    return this.authenticatedRequest(`/api/v2/torrents/properties?${params.toString()}`);
   }
 
   async recheckTorrents(hashes: string[]): Promise<{ success: boolean; hash: string }[]> {
@@ -233,7 +241,7 @@ export class QBittorrentClient {
   async setPreferences(prefs: Record<string, any>): Promise<void> {
     const formData = new URLSearchParams();
     formData.append('json', JSON.stringify(prefs));
-    await this.authenticatedRequest('/api/v2/app/setPreferences', 'POST', formData);
+    await this.authenticatedRequest('/api/v2/app/setPreferences', 'POST', formData, { timeoutMs: 30000 });
   }
 
   async getTorrentStats(): Promise<QBittorrentStats> {
